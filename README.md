@@ -54,7 +54,7 @@ bun run dev:app
 ## Apps
 
 ### memopop-site
-Marketing site, changelog, documentation. Built with Astro for optimal SEO and performance.
+Marketing site, changelog, thought-leadership, documentation. Built with Astro for optimal SEO and performance.
 
 ### memopop-web-app
 Interactive web application for memo generation. Built with Svelte 5 (runes) for modern reactivity.
