@@ -33,7 +33,7 @@ tags: # Some attempt should be made to converge on consistent tag use for later 
 ---
 ```
 
-## Model Summary and Why Care:
+## Example Summary and Why Care Sections | These are displayed in the list view:
 ```markdown
 # Summary
 Resolved production 500 errors on Vercel by fixing undated/nonexistent icons in the @tabler library as well as conflicting folders assets/Icons and assets/icons. Also removed legacy callouts code that is no longer in use.

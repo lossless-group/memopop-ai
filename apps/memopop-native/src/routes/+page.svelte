@@ -1,28 +1,39 @@
 <script lang="ts">
-  import Settings from '$lib/components/Settings.svelte';
+  import { settings } from '$lib/stores/settings.svelte';
+  import { flow } from '$lib/stores/flow.svelte';
+  import AnchorOrchestrator from '$lib/components/AnchorOrchestrator.svelte';
+  import OutlineGallery from '$lib/components/OutlineGallery.svelte';
+  import OutlineDetail from '$lib/components/OutlineDetail.svelte';
+  import FirmCreationModal from '$lib/components/FirmCreationModal.svelte';
+  import DealCreationModal from '$lib/components/DealCreationModal.svelte';
 </script>
 
-<Settings />
+{#if !settings.loaded}
+  <div class="loading-shell">Loading…</div>
+{:else if !settings.repoPath}
+  <AnchorOrchestrator />
+{:else}
+  <OutlineGallery />
+
+  {#if flow.stage.kind === 'outline_detail'}
+    <OutlineDetail outline={flow.stage.outline} />
+  {:else if flow.stage.kind === 'create_firm'}
+    <FirmCreationModal outline={flow.stage.outline} />
+  {:else if flow.stage.kind === 'create_deal'}
+    <DealCreationModal outline={flow.stage.outline} />
+  {/if}
+{/if}
 
 <style>
-  :root {
-    font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 400;
-    color: #0f0f0f;
-    background-color: #f6f6f6;
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    -webkit-text-size-adjust: 100%;
+  .loading-shell {
+    padding: 4rem;
+    text-align: center;
+    color: #6b7280;
   }
 
   @media (prefers-color-scheme: dark) {
-    :root {
-      color: #f6f6f6;
-      background-color: #2f2f2f;
+    .loading-shell {
+      color: #9ca3af;
     }
   }
 </style>
