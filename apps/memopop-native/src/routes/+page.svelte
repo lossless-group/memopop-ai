@@ -6,12 +6,15 @@
   import OutlineDetail from '$lib/components/OutlineDetail.svelte';
   import FirmCreationModal from '$lib/components/FirmCreationModal.svelte';
   import DealCreationModal from '$lib/components/DealCreationModal.svelte';
+  import JobView from '$lib/components/JobView.svelte';
 </script>
 
 {#if !settings.loaded}
   <div class="loading-shell">Loading…</div>
 {:else if !settings.repoPath}
   <AnchorOrchestrator />
+{:else if flow.stage.kind === 'running_job'}
+  <JobView outline={flow.stage.outline} jobId={flow.stage.jobId} />
 {:else}
   <OutlineGallery />
 
@@ -19,7 +22,7 @@
     <OutlineDetail outline={flow.stage.outline} />
   {:else if flow.stage.kind === 'create_firm'}
     <FirmCreationModal outline={flow.stage.outline} />
-  {:else if flow.stage.kind === 'create_deal'}
+  {:else if flow.stage.kind === 'create_deal' || flow.stage.kind === 'ready_to_run'}
     <DealCreationModal outline={flow.stage.outline} />
   {/if}
 {/if}
