@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { settings } from '$lib/stores/settings.svelte';
   import { getTransport } from '$lib/transport';
   import { openPath } from '@tauri-apps/plugin-opener';
@@ -51,6 +52,16 @@
     isOpen = false;
   }
 
+  function openWorkspace(deal: Deal) {
+    if (!settings.activeFirm) return;
+    isOpen = false;
+    // Workspace defaults to the most recent version (resolved server-side
+    // when the route loads). The route doesn't need a ?v= param up front.
+    goto(
+      `/deals/${encodeURIComponent(settings.activeFirm)}/${encodeURIComponent(deal.name)}`
+    );
+  }
+
   // Click-outside dismissal. Bound to the window so opening another part of
   // the UI dismisses the popover too.
   function handleDocClick(e: MouseEvent) {
@@ -100,12 +111,23 @@
         {:else}
           <ul>
             {#each deals as d (d.name)}
-              <li>
+              <li class="row">
                 <button
                   type="button"
-                  class="deal"
+                  class="finder-icon"
                   onclick={() => revealDeal(d)}
-                  title={d.deal_dir}
+                  title="Reveal {d.name} in Finder"
+                  aria-label="Reveal {d.name} in Finder"
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M1.75 4.25 A1 1 0 0 1 2.75 3.25 H6 L7.5 5 H13.25 A1 1 0 0 1 14.25 6 V12.25 A1 1 0 0 1 13.25 13.25 H2.75 A1 1 0 0 1 1.75 12.25 Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="deal-go"
+                  onclick={() => openWorkspace(d)}
+                  title="Open {d.name} workspace"
                 >
                   <span class="deal-name">{d.name}</span>
                   <span class="meta">
@@ -121,6 +143,7 @@
                       <span class="no-runs">no runs yet</span>
                     {/if}
                   </span>
+                  <span class="go-arrow" aria-hidden="true">→</span>
                 </button>
               </li>
             {/each}
@@ -225,13 +248,42 @@
     overflow-y: auto;
   }
 
-  .deal {
+  /* Each row has two independent click targets:
+     • the Finder icon on the far left → reveals the deal folder
+     • the rest of the row (name + meta + arrow) → opens the workspace
+     Hovering each target highlights only that target so the affordance
+     reads clearly. */
+  .row {
+    display: flex;
+    align-items: stretch;
+  }
+
+  .finder-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #9ca3af;
+    padding: 0;
+  }
+
+  .finder-icon:hover {
+    background: #ede9fe;
+    color: #5b21b6;
+  }
+
+  .deal-go {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 0.85rem;
-    width: 100%;
-    padding: 0.5rem 0.85rem;
+    gap: 0.55rem;
+    flex: 1;
+    min-width: 0;
+    padding: 0.5rem 0.85rem 0.5rem 0.45rem;
     background: transparent;
     border: none;
     text-align: left;
@@ -240,8 +292,13 @@
     color: inherit;
   }
 
-  .deal:hover {
+  .deal-go:hover {
     background: #f5f3ff;
+  }
+
+  .deal-go:hover .go-arrow {
+    color: #5b21b6;
+    transform: translateX(2px);
   }
 
   .deal-name {
@@ -259,6 +316,14 @@
     color: #6b7280;
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
+  }
+
+  .go-arrow {
+    flex-shrink: 0;
+    color: #c4b5fd;
+    font-size: 0.95rem;
+    line-height: 1;
+    transition: color 0.15s, transform 0.15s;
   }
 
   .latest {
@@ -315,8 +380,25 @@
       background: #2a1c1c;
     }
 
-    .deal:hover {
+    .deal-go:hover {
       background: #2a1f3d;
+    }
+
+    .deal-go:hover .go-arrow {
+      color: #c4b5fd;
+    }
+
+    .finder-icon {
+      color: #6b7280;
+    }
+
+    .finder-icon:hover {
+      background: #2a1f3d;
+      color: #c4b5fd;
+    }
+
+    .go-arrow {
+      color: #5b21b6;
     }
 
     .deal-name {

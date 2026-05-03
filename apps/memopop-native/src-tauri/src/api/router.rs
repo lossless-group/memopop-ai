@@ -32,6 +32,48 @@ pub async fn api_dispatch(
             forward_to_sidecar(&app, &body, &method, p).await
         }
 
+        // GET /firms/{firm}/deals/{deal}/versions — list output_dir versions
+        // for a single deal, sorted by mtime (most recent first).
+        ("GET", p)
+            if p.starts_with("/firms/")
+                && p.contains("/deals/")
+                && p.ends_with("/versions") =>
+        {
+            let repo_path = require_string(&body, "repoPath")?;
+            let stripped = p
+                .trim_start_matches("/firms/")
+                .trim_end_matches("/versions");
+            let (firm, deal) = match stripped.split_once("/deals/") {
+                Some(t) => t,
+                None => return Err(ApiError::validation("expected /firms/{firm}/deals/{deal}/versions")),
+            };
+            queries::list_versions(repo_path, firm, deal).await
+        }
+
+        // GET /firms/{firm}/deals/{deal}/versions/{version}/files — flat list
+        // of files (relative paths + sizes) under one version's output_dir.
+        ("GET", p)
+            if p.starts_with("/firms/")
+                && p.contains("/deals/")
+                && p.contains("/versions/")
+                && p.ends_with("/files") =>
+        {
+            let repo_path = require_string(&body, "repoPath")?;
+            let stripped = p
+                .trim_start_matches("/firms/")
+                .trim_end_matches("/files");
+            // stripped is now: {firm}/deals/{deal}/versions/{version}
+            let (firm_part, rest) = match stripped.split_once("/deals/") {
+                Some(t) => t,
+                None => return Err(ApiError::validation("malformed path")),
+            };
+            let (deal_part, version_part) = match rest.split_once("/versions/") {
+                Some(t) => t,
+                None => return Err(ApiError::validation("malformed path")),
+            };
+            queries::list_version_files(repo_path, firm_part, deal_part, version_part).await
+        }
+
         ("GET", "/outlines") => {
             let repo_path = require_string(&body, "repoPath")?;
             queries::list_outlines(repo_path).await

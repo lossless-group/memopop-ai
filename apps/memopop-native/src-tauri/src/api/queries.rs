@@ -122,6 +122,147 @@ pub async fn list_deals(repo_path: &str, firm: &str) -> Result<Value, ApiError> 
 }
 
 #[derive(Debug, Serialize)]
+struct VersionSummary {
+    name: String,
+    output_dir: String,
+    last_modified_ms: u64,
+}
+
+pub async fn list_versions(
+    repo_path: &str,
+    firm: &str,
+    deal: &str,
+) -> Result<Value, ApiError> {
+    if firm.is_empty() || deal.is_empty() {
+        return Err(ApiError::validation("firm and deal required"));
+    }
+
+    let outputs_dir = Path::new(repo_path)
+        .join("io")
+        .join(firm)
+        .join("deals")
+        .join(deal)
+        .join("outputs");
+
+    if !outputs_dir.is_dir() {
+        return Ok(json!({ "versions": [] }));
+    }
+
+    let mut versions: Vec<VersionSummary> = Vec::new();
+
+    let entries = std::fs::read_dir(&outputs_dir)
+        .map_err(|e| ApiError::internal(format!("read_dir({}): {}", outputs_dir.display(), e)))?;
+
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = match entry.file_name().into_string() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let dir = entry.path();
+        let last_modified_ms = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        versions.push(VersionSummary {
+            name,
+            output_dir: dir.to_string_lossy().into_owned(),
+            last_modified_ms,
+        });
+    }
+
+    versions.sort_by(|a, b| b.last_modified_ms.cmp(&a.last_modified_ms));
+    Ok(json!({ "versions": versions }))
+}
+
+#[derive(Debug, Serialize)]
+struct ArtifactInfo {
+    path: String,
+    size: u64,
+}
+
+pub async fn list_version_files(
+    repo_path: &str,
+    firm: &str,
+    deal: &str,
+    version: &str,
+) -> Result<Value, ApiError> {
+    if firm.is_empty() || deal.is_empty() || version.is_empty() {
+        return Err(ApiError::validation("firm, deal, and version required"));
+    }
+    if version.contains("..") || version.contains('/') {
+        return Err(ApiError::validation("invalid version name"));
+    }
+
+    let version_dir = Path::new(repo_path)
+        .join("io")
+        .join(firm)
+        .join("deals")
+        .join(deal)
+        .join("outputs")
+        .join(version);
+
+    if !version_dir.is_dir() {
+        return Err(ApiError {
+            status: 404,
+            code: "version_not_found".into(),
+            message: format!("version directory not found: {}", version_dir.display()),
+        });
+    }
+
+    let mut files: Vec<ArtifactInfo> = Vec::new();
+    walk_files(&version_dir, &version_dir, &mut files)
+        .map_err(|e| ApiError::internal(format!("walk: {}", e)))?;
+
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(json!({
+        "version_dir": version_dir.to_string_lossy().into_owned(),
+        "files": files,
+    }))
+}
+
+fn walk_files(
+    root: &Path,
+    cur: &Path,
+    out: &mut Vec<ArtifactInfo>,
+) -> Result<(), std::io::Error> {
+    for entry in std::fs::read_dir(cur)?.flatten() {
+        let p = entry.path();
+        let ft = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if ft.is_dir() {
+            // Skip dot-dirs (e.g., .DS_Store leftovers, .git in submodule deals).
+            if p.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                continue;
+            }
+            walk_files(root, &p, out)?;
+        } else if ft.is_file() {
+            let rel = match p.strip_prefix(root) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let path_str = rel.to_string_lossy().replace('\\', "/");
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            out.push(ArtifactInfo {
+                path: path_str,
+                size,
+            });
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
 struct OutlineSummary {
     id: String,
     title: String,
