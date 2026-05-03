@@ -5,6 +5,7 @@
   import { openPath } from '@tauri-apps/plugin-opener';
   import { settings } from '$lib/stores/settings.svelte';
   import { getTransport } from '$lib/transport';
+  import { openWithPreferred } from '$lib/openers';
 
   interface Props {
     firm: string;
@@ -90,6 +91,11 @@
     await loadFiles(name);
   }
 
+  // Two open paths intentionally:
+  //   • revealOutputDir — always Finder (so the "Open in Finder" button does
+  //     what its label says, regardless of the user's notebook preference).
+  //   • revealInPreferredNotebook — uses the configured markdown notebook
+  //     if any. Surfaced as a separate button when configured.
   async function revealOutputDir() {
     if (!outputDir) return;
     try {
@@ -99,11 +105,22 @@
     }
   }
 
+  async function openInNotebook() {
+    if (!outputDir) return;
+    try {
+      await openWithPreferred(outputDir, { isDir: true });
+    } catch (e) {
+      loadError = `Couldn't open in notebook: ${e}`;
+    }
+  }
+
+  // File clicks honor the markdown-editor preference for .md files. Other
+  // extensions go through the OS default (image previews, etc.).
   async function openFile(rel: string) {
     if (!outputDir) return;
     const abs = `${outputDir}/${rel}`;
     try {
-      await openPath(abs);
+      await openWithPreferred(abs);
     } catch (e) {
       loadError = `Couldn't open ${rel}: ${e}`;
     }
@@ -244,6 +261,18 @@
       >
         📁 Open in Finder
       </button>
+      {#if settings.markdownNotebook}
+        {@const notebookName = (settings.markdownNotebook.split('/').pop() ?? '').replace(/\.app$/, '')}
+        <button
+          type="button"
+          class="notebook-btn"
+          onclick={openInNotebook}
+          disabled={!outputDir}
+          title="Open this version's folder in {notebookName}"
+        >
+          📓 Open in {notebookName}
+        </button>
+      {/if}
     </div>
   </header>
 
@@ -401,6 +430,29 @@
   }
 
   .finder-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .notebook-btn {
+    background: #5b21b6;
+    color: white;
+    border: 1px solid #5b21b6;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .notebook-btn:hover:not(:disabled) {
+    background: #4c1d95;
+  }
+
+  .notebook-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

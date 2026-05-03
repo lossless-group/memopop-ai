@@ -67,6 +67,41 @@
     }
   }
 
+  // macOS .app bundles are technically directories that the OS presents as
+  // single files. The native dialog handles them transparently when you
+  // navigate into /Applications — no special flag needed beyond the
+  // extension filter.
+  async function pickApp(kind: 'editor' | 'notebook') {
+    const title =
+      kind === 'editor'
+        ? 'Choose a markdown editor (.app)'
+        : 'Choose a markdown notebook / workspace app (.app)';
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      defaultPath: '/Applications',
+      filters: [{ name: 'Applications', extensions: ['app'] }],
+      title,
+    });
+    if (typeof selected !== 'string') return;
+    if (kind === 'editor') await settings.setMarkdownEditor(selected);
+    else await settings.setMarkdownNotebook(selected);
+  }
+
+  async function clearApp(kind: 'editor' | 'notebook') {
+    if (kind === 'editor') await settings.setMarkdownEditor(null);
+    else await settings.setMarkdownNotebook(null);
+  }
+
+  // Strip everything but the .app bundle name for display — paths get long
+  // (/Applications/Visual Studio Code.app) and the bundle name is the
+  // signal the user cares about.
+  function appLabel(path: string | null): string {
+    if (!path) return '';
+    const segs = path.split('/');
+    return segs[segs.length - 1] || path;
+  }
+
   async function clearRepoPath() {
     await settings.setRepoPath(null);
   }
@@ -167,6 +202,53 @@
       </span>
     </div>
   {/if}
+
+  <hr class="divider" />
+
+  <div class="field">
+    <label for="md-editor" title="App used to open single .md files">Markdown editor</label>
+    <div class="row">
+      <input
+        id="md-editor"
+        type="text"
+        readonly
+        value={appLabel(settings.markdownEditor)}
+        placeholder="Default — OS picks"
+      />
+      <button type="button" onclick={() => pickApp('editor')}>Choose…</button>
+      {#if settings.markdownEditor}
+        <button type="button" class="ghost" onclick={() => clearApp('editor')}>Clear</button>
+      {/if}
+    </div>
+    <p class="help">
+      Used when you click a <code>.md</code> file in a deal workspace. Pick
+      <code>Obsidian.app</code>, <code>Typora.app</code>, <code>Cursor.app</code>,
+      whatever your reading-and-editing app of choice is.
+    </p>
+  </div>
+
+  <div class="field">
+    <label for="md-notebook" title="App used to open a directory of markdown files">Markdown notebook / workspace</label>
+    <div class="row">
+      <input
+        id="md-notebook"
+        type="text"
+        readonly
+        value={appLabel(settings.markdownNotebook)}
+        placeholder="Default — OS picks"
+      />
+      <button type="button" onclick={() => pickApp('notebook')}>Choose…</button>
+      {#if settings.markdownNotebook}
+        <button type="button" class="ghost" onclick={() => clearApp('notebook')}>Clear</button>
+      {/if}
+    </div>
+    <p class="help">
+      Used when you click "Open in Finder" on a deal version's output_dir.
+      For Obsidian users: pick <code>Obsidian.app</code> here too — it'll open
+      the directory as a vault. For VS Code / Cursor: same idea (opens the
+      directory as a workspace).
+    </p>
+  </div>
 </section>
 
 <style>
@@ -307,6 +389,12 @@
     margin-top: 0.4rem;
   }
 
+  .divider {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 2rem 0 1.5rem;
+  }
+
   code {
     background: #f0f0f0;
     padding: 0 0.25rem;
@@ -417,6 +505,10 @@
 
     .help {
       color: #aaa;
+    }
+
+    .divider {
+      border-top-color: #2a2a2c;
     }
 
     .active {
