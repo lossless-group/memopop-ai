@@ -7,6 +7,7 @@
   import PhaseChecklist from './PhaseChecklist.svelte';
   import LogStream from './LogStream.svelte';
   import ArtifactBrowser from './ArtifactBrowser.svelte';
+  import CharacterRow from './CharacterRow.svelte';
 
   interface Props {
     outline: Outline;
@@ -231,6 +232,8 @@
       {/if}
     </div>
   {/if}
+
+  <CharacterRow {milestones} {isRunning} />
 
   <div class="grid">
     <div class="col col-checklist">

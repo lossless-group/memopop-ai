@@ -7,7 +7,7 @@
     },
     "apps/memopop-native": {
       "name": "memopop-native",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@tauri-apps/api": "^2",
         "@tauri-apps/plugin-dialog": "~2",
@@ -15,12 +15,14 @@
         "@tauri-apps/plugin-opener": "^2",
         "@tauri-apps/plugin-shell": "~2",
         "@tauri-apps/plugin-store": "~2",
+        "js-yaml": "^4.1.1",
       },
       "devDependencies": {
         "@sveltejs/adapter-static": "^3.0.6",
         "@sveltejs/kit": "^2.58.0",
         "@sveltejs/vite-plugin-svelte": "^7.0.0",
         "@tauri-apps/cli": "^2",
+        "@types/js-yaml": "^4.0.9",
         "svelte": "^5.55.5",
         "svelte-check": "^4.4.6",
         "typescript": "^6.0.3",
@@ -381,6 +383,8 @@
     "@types/fontkit": ["@types/fontkit@2.0.8", "", { "dependencies": { "@types/node": "*" } }, "sha512-wN+8bYxIpJf+5oZdrdtaX04qUuWHcKxcDEgRS9Qm9ZClSHjzEn13SxUC+5eRM+4yXIeTYk8mTzLAWGF64847ew=="],
 
     "@types/hast": ["@types/hast@3.0.4", "", { "dependencies": { "@types/unist": "*" } }, "sha512-WPs+bbQw5aCj+x6laNGWLH3wviHtoCv/P3+otBhbOhJgG8qtpdAMlTCxLtsTWA7LH1Oh/bFCHsBn0TPS5m30EQ=="],
+
+    "@types/js-yaml": ["@types/js-yaml@4.0.9", "", {}, "sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg=="],
 
     "@types/mdast": ["@types/mdast@4.0.4", "", { "dependencies": { "@types/unist": "*" } }, "sha512-kGaNbPh1k7AFzgpud/gMdvIm5xuECykRR+JnWKQno9TAXVa6WIVCGTPvYGekIDL4uwCZQSYbUxNBSb1aUo79oA=="],
 
