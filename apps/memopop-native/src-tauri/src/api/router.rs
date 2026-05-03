@@ -16,6 +16,16 @@ pub async fn api_dispatch(
             queries::list_firms(repo_path).await
         }
 
+        // GET /firms/{firm}/deals — list deals under io/{firm}/deals/.
+        // Returns name + abs path to the deal dir + latest version + version count.
+        ("GET", p) if p.starts_with("/firms/") && p.ends_with("/deals") => {
+            let repo_path = require_string(&body, "repoPath")?;
+            let firm = p
+                .trim_start_matches("/firms/")
+                .trim_end_matches("/deals");
+            queries::list_deals(repo_path, firm).await
+        }
+
         ("GET", "/outlines") => {
             let repo_path = require_string(&body, "repoPath")?;
             queries::list_outlines(repo_path).await

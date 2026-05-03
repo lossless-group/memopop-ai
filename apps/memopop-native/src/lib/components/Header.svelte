@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { settings } from '$lib/stores/settings.svelte';
+  import DealsDropdown from './DealsDropdown.svelte';
 
   let onSettingsPage = $derived(page.url.pathname.startsWith('/settings'));
 
@@ -23,6 +24,7 @@
   <div class="spacer"></div>
 
   {#if settings.loaded && settings.activeFirm}
+    <DealsDropdown />
     <div class="firm-pill" title="Active firm">
       <span class="dot"></span>
       <span class="firm-name">{settings.activeFirm}</span>

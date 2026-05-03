@@ -41,6 +41,87 @@ pub async fn list_firms(repo_path: &str) -> Result<Value, ApiError> {
 }
 
 #[derive(Debug, Serialize)]
+struct DealSummary {
+    name: String,
+    deal_dir: String,
+    latest_version: Option<String>,
+    version_count: usize,
+}
+
+pub async fn list_deals(repo_path: &str, firm: &str) -> Result<Value, ApiError> {
+    if firm.is_empty() {
+        return Err(ApiError::validation("firm required"));
+    }
+
+    let deals_dir = Path::new(repo_path).join("io").join(firm).join("deals");
+    if !deals_dir.is_dir() {
+        return Ok(json!({ "deals": [] }));
+    }
+
+    let mut deals: Vec<DealSummary> = Vec::new();
+
+    let entries = std::fs::read_dir(&deals_dir)
+        .map_err(|e| ApiError::internal(format!("read_dir({}): {}", deals_dir.display(), e)))?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = match entry.file_name().into_string() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+
+        let deal_dir = entry.path();
+
+        // Walk outputs/ to find the latest version (by mtime) + count.
+        let outputs_dir = deal_dir.join("outputs");
+        let mut versions: Vec<(String, std::time::SystemTime)> = Vec::new();
+        if outputs_dir.is_dir() {
+            if let Ok(version_entries) = std::fs::read_dir(&outputs_dir) {
+                for v in version_entries.flatten() {
+                    if !v.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        continue;
+                    }
+                    let v_name = match v.file_name().into_string() {
+                        Ok(s) => s,
+                        Err(_) => continue,
+                    };
+                    if v_name.starts_with('.') {
+                        continue;
+                    }
+                    let mtime = v
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .unwrap_or(std::time::UNIX_EPOCH);
+                    versions.push((v_name, mtime));
+                }
+            }
+        }
+        versions.sort_by(|a, b| b.1.cmp(&a.1));
+        let latest_version = versions.first().map(|(n, _)| n.clone());
+        let version_count = versions.len();
+
+        deals.push(DealSummary {
+            name,
+            deal_dir: deal_dir.to_string_lossy().into_owned(),
+            latest_version,
+            version_count,
+        });
+    }
+
+    deals.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(json!({ "deals": deals }))
+}
+
+#[derive(Debug, Serialize)]
 struct OutlineSummary {
     id: String,
     title: String,
