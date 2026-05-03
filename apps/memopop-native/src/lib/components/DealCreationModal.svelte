@@ -3,6 +3,7 @@
   import { settings } from '$lib/stores/settings.svelte';
   import { flow } from '$lib/stores/flow.svelte';
   import { getTransport, type ApiError } from '$lib/transport';
+  import { dealSlug } from '$lib/slugify';
   import type { Outline, MemoMode } from '$lib/types';
 
   interface Props {
@@ -62,16 +63,24 @@
     return path.split('/').pop() ?? path;
   }
 
+  // The directory name on disk has to be path-safe — no spaces, no fs-hostile
+  // chars. dealSlug enforces "Mercury Bank" → "Mercury-Bank" while preserving
+  // case (ChromaDB stays ChromaDB). Every place this name is used downstream
+  // (output_dir, deal_dir, file watcher path) sees the same slugified form.
   function submit(e: Event) {
     e.preventDefault();
     if (!canSubmit) return;
     flow.markReady(outline, {
       companyUrl: companyUrl.trim(),
-      companyName: companyName.trim(),
+      companyName: dealSlug(companyName),
       deckPath,
       mode,
     });
   }
+
+  // Live slug preview for the summary panel and the "ready to generate"
+  // confirmation. Empty until the user has typed something to slugify.
+  let slugPreview = $derived(dealSlug(companyName));
 
   async function generate() {
     if (flow.stage.kind !== 'ready_to_run') return;
@@ -190,6 +199,14 @@
             bind:value={companyName}
             placeholder="e.g., Stripe"
           />
+          {#if slugPreview && slugPreview !== companyName.trim()}
+            <span class="slug-preview">
+              Saved as: <code>{slugPreview}/</code>
+              <span class="slug-note">
+                — spaces become hyphens for the deal directory.
+              </span>
+            </span>
+          {/if}
         </label>
 
         <div class="field">
@@ -242,7 +259,14 @@
             {/if}
             {#if companyName.trim()}
               <dt>Company name</dt>
-              <dd>{companyName}</dd>
+              <dd>
+                {companyName}
+                {#if slugPreview !== companyName.trim()}
+                  <span class="slug-inline">
+                    → saved as <code>{slugPreview}/</code>
+                  </span>
+                {/if}
+              </dd>
             {/if}
             {#if deckPath}
               <dt>Pitch deck</dt>
@@ -397,6 +421,42 @@
     color: #9ca3af;
     font-weight: 400;
     font-size: 0.85em;
+  }
+
+  .slug-preview {
+    display: block;
+    margin-top: 0.4rem;
+    font-size: 0.78rem;
+    color: #6b7280;
+  }
+
+  .slug-preview code {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    background: #f5f3ff;
+    color: #5b21b6;
+    padding: 0.05rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.95em;
+  }
+
+  .slug-note {
+    font-style: italic;
+    color: #9ca3af;
+  }
+
+  .slug-inline {
+    display: inline;
+    margin-left: 0.35rem;
+    font-size: 0.85em;
+    color: #6b7280;
+  }
+
+  .slug-inline code {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    background: #f5f3ff;
+    color: #5b21b6;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
   }
 
   input[type='text'],
