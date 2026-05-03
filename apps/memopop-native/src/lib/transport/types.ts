@@ -7,7 +7,15 @@ export interface ApiError {
   details?: unknown;
 }
 
-export type JobEventType = 'log' | 'status' | 'complete' | 'error' | 'milestone';
+export type JobEventType =
+  | 'log'
+  | 'status'
+  | 'complete'
+  | 'error'
+  | 'milestone'
+  | 'file_added'
+  | 'file_modified'
+  | 'file_removed';
 
 export type MilestoneStage =
   | 'start'
@@ -27,11 +35,14 @@ export interface JobEvent {
   type: JobEventType;
   ts: string;
   // Discriminated by `type`. Concrete shapes from the FastAPI sidecar:
-  //   log:       { line: string }
-  //   status:    { status: 'queued' | 'running' | 'completed' | 'failed' }
-  //   complete:  { output_dir: string | null, version: string | null, overall_score?: number }
-  //   error:     { message: string, traceback?: string }
-  //   milestone: { id: string, stage: MilestoneStage, level: MilestoneLevel, label: string, detail?: string }
+  //   log:           { line: string }
+  //   status:        { status: 'queued' | 'running' | 'completed' | 'failed' }
+  //   complete:      { output_dir: string | null, version: string | null, overall_score?: number }
+  //   error:         { message: string, traceback?: string }
+  //   milestone:     { id: string, stage: MilestoneStage, level: MilestoneLevel, label: string, detail?: string }
+  //   file_added:    { path: string, size: number }    // path relative to output_dir
+  //   file_modified: { path: string, size: number }
+  //   file_removed:  { path: string }
   [k: string]: unknown;
 }
 

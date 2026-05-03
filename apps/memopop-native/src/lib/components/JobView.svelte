@@ -182,11 +182,11 @@
     <div class="col col-checklist">
       <PhaseChecklist {milestones} {isRunning} />
     </div>
-    <div class="col col-stream">
-      <LogStream {events} {isRunning} />
-    </div>
     <div class="col col-files">
       <ArtifactBrowser {jobId} {isRunning} />
+    </div>
+    <div class="col col-stream">
+      <LogStream {events} {isRunning} />
     </div>
   </div>
 </div>
@@ -439,7 +439,10 @@
   .grid {
     flex: 1;
     display: grid;
-    grid-template-columns: 300px minmax(0, 1fr) 320px;
+    /* Files panel is the main column — the user's primary "what's happening
+       to my outputs" view. Logs are the nerd sidebar (still useful, smaller).
+       Checklist is the narrow status spine on the left. */
+    grid-template-columns: 280px minmax(0, 1fr) 340px;
     min-height: 0;
     overflow: hidden;
   }
@@ -451,18 +454,23 @@
 
   .col-files {
     border-left: 1px solid #e5e7eb;
-    padding: 0.85rem 1rem;
-    background: white;
-    overflow-y: auto;
+    background: #fafaf9;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
-  /* Narrow viewport: collapse the files panel. The user can still see new files
-     via the milestones (which mention output_dir) and the artifact endpoints. */
-  @media (max-width: 980px) {
+  .col-stream {
+    border-left: 1px solid #1f2024;
+  }
+
+  /* Narrow viewport: drop the log column first — files stay visible because
+     they're the primary "did anything actually happen" signal. */
+  @media (max-width: 1100px) {
     .grid {
-      grid-template-columns: 280px minmax(0, 1fr);
+      grid-template-columns: 260px minmax(0, 1fr);
     }
-    .col-files {
+    .col-stream {
       display: none;
     }
   }

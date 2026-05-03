@@ -10,6 +10,19 @@ export interface Milestone {
   detail?: string;
 }
 
+// Live state of one artifact under the run's output_dir. `status` is an
+// ephemeral UI flag — 'fresh' (just created) or 'modified' (just changed) —
+// that fades back to 'idle' after a short window so the file tree can flash
+// the entry without redrawing forever.
+export interface FileEntry {
+  path: string;
+  size: number;
+  status: 'idle' | 'fresh' | 'modified';
+  changedAt: number;
+}
+
+const FILE_HIGHLIGHT_MS = 3000;
+
 export interface DealPayload {
   companyUrl: string;
   companyName: string;
@@ -65,6 +78,12 @@ class FlowState {
   stage = $state<FlowStage>({ kind: 'idle' });
   events = $state.raw<JobEvent[]>([]);
   startedAtMs = $state<number | null>(null);
+  // Live mirror of the run's output_dir, populated by file_added /
+  // file_modified / file_removed events from the sidecar's filesystem
+  // watcher. Map for O(1) upsert by path; raw because the consumer
+  // (ArtifactBrowser) re-derives a tree on every reassignment, and we don't
+  // want the per-entry deep proxy that $state would impose.
+  files = $state.raw<Map<string, FileEntry>>(new Map());
   // Monotonic seq from the sidecar's bus. EventSource reconnects cause the
   // server to replay its backlog (no Last-Event-ID is honored), so the same
   // event can arrive twice. Dropping events with seq <= lastSeenSeq keeps the
@@ -111,6 +130,7 @@ class FlowState {
 
   markRunning(outline: Outline, payload: DealPayload, jobId: string) {
     this.events = [];
+    this.files = new Map();
     this.startedAtMs = Date.now();
     this.lastSeenSeq = -1;
     this.stage = {
@@ -181,7 +201,40 @@ class FlowState {
         label: typeof event.label === 'string' ? event.label : 'Update',
         detail: typeof event.detail === 'string' ? event.detail : undefined,
       });
+    } else if (event.type === 'file_added' || event.type === 'file_modified') {
+      const path = typeof event.path === 'string' ? event.path : null;
+      if (!path) return;
+      const size = typeof event.size === 'number' ? event.size : 0;
+      this.upsertFile(path, size, event.type === 'file_added' ? 'fresh' : 'modified');
+    } else if (event.type === 'file_removed') {
+      const path = typeof event.path === 'string' ? event.path : null;
+      if (!path) return;
+      this.removeFile(path);
     }
+  }
+
+  private upsertFile(path: string, size: number, kind: 'fresh' | 'modified') {
+    const changedAt = Date.now();
+    const next = new Map(this.files);
+    next.set(path, { path, size, status: kind, changedAt });
+    this.files = next;
+    // Fade the highlight back to 'idle' after the window expires — but only
+    // if no newer change has landed in the meantime (compared by changedAt
+    // identity, captured above).
+    setTimeout(() => {
+      const cur = this.files.get(path);
+      if (!cur || cur.changedAt !== changedAt) return;
+      const fresher = new Map(this.files);
+      fresher.set(path, { ...cur, status: 'idle' });
+      this.files = fresher;
+    }, FILE_HIGHLIGHT_MS);
+  }
+
+  private removeFile(path: string) {
+    if (!this.files.has(path)) return;
+    const next = new Map(this.files);
+    next.delete(path);
+    this.files = next;
   }
 
   startBrandSetup(firm: string) {
@@ -190,6 +243,7 @@ class FlowState {
 
   close() {
     this.events = [];
+    this.files = new Map();
     this.startedAtMs = null;
     this.lastSeenSeq = -1;
     this.stage = { kind: 'idle' };

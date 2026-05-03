@@ -1,12 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { settings } from '$lib/stores/settings.svelte';
+  import { flow, type FileEntry } from '$lib/stores/flow.svelte';
   import { getTransport } from '$lib/transport';
-
-  interface ArtifactInfo {
-    path: string;
-    size: number;
-  }
 
   interface Props {
     jobId: string;
@@ -15,67 +11,165 @@
 
   let { jobId, isRunning }: Props = $props();
 
-  let files = $state<ArtifactInfo[]>([]);
+  // The sidecar's file watcher pushes file_added / file_modified / file_removed
+  // events through the SSE stream and the flow store maintains a Map<path,
+  // FileEntry> from them. We render that map directly — no polling. The
+  // one-shot fetch on mount below is a safety net for two cases:
+  //   (1) the user re-opens JobView mid-run (the bus backlog may have rotated
+  //       past the watcher's initial snapshot);
+  //   (2) the run has already finished and the bus is closed (the snapshot
+  //       endpoint is the only authoritative source).
   let outputDir = $state<string | null>(null);
-  let lastFetchAt = $state<Date | null>(null);
-  let recentlyAdded = $state<Set<string>>(new Set());
-  let pollHandle: ReturnType<typeof setInterval> | null = null;
-  let error = $state<string | null>(null);
+  let initialFetchError = $state<string | null>(null);
 
-  async function fetchOnce() {
+  // Per-folder collapse state. Default: every folder expanded. The user can
+  // collapse to focus on a specific subtree.
+  let collapsed = $state<Set<string>>(new Set());
+
+  function toggle(folderPath: string) {
+    const next = new Set(collapsed);
+    if (next.has(folderPath)) next.delete(folderPath);
+    else next.add(folderPath);
+    collapsed = next;
+  }
+
+  // ------------- initial REST fetch -------------
+
+  onMount(async () => {
     if (!settings.repoPath) return;
     try {
       const result = await getTransport().request<{
         output_dir: string | null;
-        files: ArtifactInfo[];
+        files: Array<{ path: string; size: number }>;
       }>('GET', `/memos/${jobId}/artifacts`, { repoPath: settings.repoPath });
-
-      // Diff to flag newly-arrived files for a brief highlight.
-      const previous = new Set(files.map((f) => f.path));
-      const fresh: string[] = [];
-      for (const f of result.files) {
-        if (!previous.has(f.path)) fresh.push(f.path);
-      }
-      if (fresh.length > 0 && files.length > 0) {
-        // Don't flash on the very first fetch — that'd light up everything at once.
-        recentlyAdded = new Set([...recentlyAdded, ...fresh]);
-        const toClear = fresh.slice();
-        setTimeout(() => {
-          recentlyAdded = new Set([...recentlyAdded].filter((p) => !toClear.includes(p)));
-        }, 3000);
-      }
-
-      files = result.files;
       outputDir = result.output_dir;
-      lastFetchAt = new Date();
-      error = null;
+      // Seed any files we don't already know about. The SSE-driven flow.files
+      // takes precedence — if a path was already received with a 'fresh' or
+      // 'modified' flag, don't overwrite it with an idle baseline.
+      for (const f of result.files) {
+        if (!flow.files.has(f.path)) {
+          // Direct mutation is OK here — we go through the public API by
+          // synthesizing a file_added event so the upsert + highlight logic
+          // is consistent with live events.
+          flow.appendEvent({
+            type: 'file_added',
+            ts: new Date().toISOString(),
+            path: f.path,
+            size: f.size,
+          } as never);
+        }
+      }
     } catch (e) {
-      // Common when the job hasn't created its output dir yet (404 from the
-      // dispatcher). Don't surface as a hard error; just keep polling.
       const status = (e as { status?: number })?.status;
+      // 404 just means the orchestrator hasn't created its output dir yet.
+      // The watcher will populate flow.files as soon as it does.
       if (status !== 404) {
-        error = (e as { message?: string })?.message ?? 'Failed to load files';
+        initialFetchError = (e as { message?: string })?.message ?? 'Failed to load files';
+      }
+    }
+  });
+
+  // When the run terminates, do one final fetch to catch any writes the watcher
+  // didn't see (e.g. files written in the worker thread's last 100ms before
+  // the watcher's stop_event fired).
+  let finalFetchDone = false;
+  $effect(() => {
+    if (isRunning || finalFetchDone || !settings.repoPath) return;
+    finalFetchDone = true;
+    void (async () => {
+      try {
+        const result = await getTransport().request<{
+          output_dir: string | null;
+          files: Array<{ path: string; size: number }>;
+        }>('GET', `/memos/${jobId}/artifacts`, { repoPath: settings.repoPath });
+        outputDir = result.output_dir;
+        for (const f of result.files) {
+          const existing = flow.files.get(f.path);
+          if (!existing || existing.size !== f.size) {
+            flow.appendEvent({
+              type: existing ? 'file_modified' : 'file_added',
+              ts: new Date().toISOString(),
+              path: f.path,
+              size: f.size,
+            } as never);
+          }
+        }
+      } catch {
+        // Silent — terminal-state UX shouldn't show errors from the cleanup probe.
+      }
+    })();
+  });
+
+  // ------------- tree construction -------------
+
+  type FileNode = { kind: 'file'; name: string; fullPath: string; entry: FileEntry };
+  type FolderNode = {
+    kind: 'folder';
+    name: string;
+    fullPath: string;
+    children: TreeNode[];
+  };
+  type TreeNode = FileNode | FolderNode;
+
+  function buildTree(files: Map<string, FileEntry>): TreeNode[] {
+    const root: FolderNode = { kind: 'folder', name: '', fullPath: '', children: [] };
+    for (const entry of files.values()) {
+      const parts = entry.path.split('/').filter(Boolean);
+      let cursor: FolderNode = root;
+      for (let i = 0; i < parts.length; i++) {
+        const name = parts[i];
+        const isFile = i === parts.length - 1;
+        const childFullPath = parts.slice(0, i + 1).join('/');
+        let child: TreeNode | undefined = cursor.children.find((c) => c.name === name);
+        if (!child) {
+          child = isFile
+            ? { kind: 'file', name, fullPath: childFullPath, entry }
+            : { kind: 'folder', name, fullPath: childFullPath, children: [] };
+          cursor.children.push(child);
+        } else if (isFile && child.kind === 'file') {
+          child.entry = entry; // refresh size/status on update
+        }
+        if (child.kind === 'folder') cursor = child;
+      }
+    }
+    sortFolder(root);
+    return root.children;
+  }
+
+  function sortFolder(folder: FolderNode) {
+    folder.children.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const c of folder.children) {
+      if (c.kind === 'folder') sortFolder(c);
+    }
+  }
+
+  // Flatten the tree to a list of {node, depth} entries honoring the user's
+  // collapse state. Rendering a flat list keeps the template simple — no
+  // Svelte recursion gymnastics — and lets us virtualize later if needed.
+  type FlatRow = { node: TreeNode; depth: number };
+
+  function flatten(nodes: TreeNode[], depth: number, out: FlatRow[]) {
+    for (const n of nodes) {
+      out.push({ node: n, depth });
+      if (n.kind === 'folder' && !collapsed.has(n.fullPath)) {
+        flatten(n.children, depth + 1, out);
       }
     }
   }
 
-  onMount(() => {
-    fetchOnce();
-    pollHandle = setInterval(fetchOnce, 3000);
+  let tree = $derived(buildTree(flow.files));
+  let rows = $derived.by(() => {
+    const out: FlatRow[] = [];
+    flatten(tree, 0, out);
+    return out;
   });
 
-  onDestroy(() => {
-    if (pollHandle) clearInterval(pollHandle);
-  });
+  let totalFiles = $derived(flow.files.size);
 
-  // When the job finishes, do one final fetch then stop polling.
-  $effect(() => {
-    if (!isRunning && pollHandle) {
-      clearInterval(pollHandle);
-      pollHandle = null;
-      fetchOnce();
-    }
-  });
+  // ------------- formatters -------------
 
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -83,41 +177,20 @@
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
 
-  function topFolder(path: string): string {
-    const i = path.indexOf('/');
-    return i >= 0 ? path.slice(0, i) : '';
-  }
-
   function shorten(p: string): string {
     const parts = p.split('/').filter(Boolean);
-    if (parts.length <= 3) return p;
-    return '…/' + parts.slice(-3).join('/');
+    if (parts.length <= 4) return p;
+    return '…/' + parts.slice(-4).join('/');
   }
 
-  function formatRelative(d: Date): string {
-    const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
-    if (seconds < 5) return 'just now';
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}m ago`;
-  }
-
-  let grouped = $derived(groupFiles(files));
-
-  function groupFiles(items: ArtifactInfo[]) {
-    const map = new Map<string, ArtifactInfo[]>();
-    for (const item of items) {
-      const folder = topFolder(item.path);
-      const key = folder || '_root';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(item);
+  function folderFileCount(node: TreeNode): number {
+    if (node.kind !== 'folder') return 0;
+    let count = 0;
+    for (const c of node.children) {
+      if (c.kind === 'file') count++;
+      else count += folderFileCount(c);
     }
-    // Sort folders so '_root' (top-level files) comes first, then alphabetical.
-    return [...map.entries()].sort(([a], [b]) => {
-      if (a === '_root') return -1;
-      if (b === '_root') return 1;
-      return a.localeCompare(b);
-    });
+    return count;
   }
 </script>
 
@@ -125,55 +198,60 @@
   <header class="head">
     {#if outputDir}
       <code class="dir" title={outputDir}>{shorten(outputDir)}</code>
+    {:else if isRunning}
+      <span class="dir-empty">Waiting for output directory…</span>
     {:else}
-      <span class="dir-empty">No output directory yet</span>
+      <span class="dir-empty">No output directory</span>
     {/if}
-    <span class="count">{files.length} {files.length === 1 ? 'file' : 'files'}</span>
+    <span class="count">{totalFiles} {totalFiles === 1 ? 'file' : 'files'}</span>
   </header>
 
-  {#if error}
-    <p class="error">{error}</p>
+  {#if initialFetchError}
+    <p class="error">{initialFetchError}</p>
   {/if}
 
-  <div class="files">
-    {#if files.length === 0}
+  <div class="tree">
+    {#if rows.length === 0}
       <div class="empty">
-        {isRunning ? 'No files written yet — they\'ll appear here as the orchestrator works.' : 'No files were produced.'}
+        {isRunning
+          ? 'Files will appear here as the orchestrator writes them.'
+          : 'No files were produced.'}
       </div>
     {:else}
-      {#each grouped as [folder, items] (folder)}
-        <section class="group">
-          <h4 class="group-name">
-            {folder === '_root' ? '/' : folder + '/'}
-            <span class="group-count">{items.length}</span>
-          </h4>
-          <ul>
-            {#each items as f (f.path)}
-              <li class="file" class:fresh={recentlyAdded.has(f.path)}>
-                <code class="name">{folder === '_root' ? f.path : f.path.slice(folder.length + 1)}</code>
-                <span class="size">{formatSize(f.size)}</span>
-              </li>
-            {/each}
-          </ul>
-        </section>
+      {#each rows as { node, depth } (node.fullPath)}
+        {#if node.kind === 'folder'}
+          <button
+            type="button"
+            class="row folder"
+            style:padding-left="{depth * 14 + 6}px"
+            onclick={() => toggle(node.fullPath)}
+          >
+            <span class="caret">{collapsed.has(node.fullPath) ? '▶' : '▼'}</span>
+            <span class="folder-name">{node.name}/</span>
+            <span class="folder-count">{folderFileCount(node)}</span>
+          </button>
+        {:else}
+          <div
+            class="row file file-{node.entry.status}"
+            style:padding-left="{depth * 14 + 22}px"
+          >
+            <span class="file-name" title={node.fullPath}>{node.name}</span>
+            <span class="size">{formatSize(node.entry.size)}</span>
+          </div>
+        {/if}
       {/each}
     {/if}
   </div>
-
-  {#if lastFetchAt}
-    <div class="footer-meta">
-      Updated {formatRelative(lastFetchAt)}
-      {#if isRunning}<span class="poll-dot" title="Polling every 3s"></span>{/if}
-    </div>
-  {/if}
 </div>
 
 <style>
   .browser {
-    flex: 1;
     display: flex;
     flex-direction: column;
+    height: 100%;
     min-height: 0;
+    background: #fafaf9;
+    overflow: hidden;
   }
 
   .head {
@@ -181,9 +259,10 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.4rem 0 0.6rem;
-    border-bottom: 1px solid #f3f4f6;
-    margin-bottom: 0.5rem;
+    padding: 0.85rem 1rem 0.6rem;
+    background: #fafaf9;
+    border-bottom: 1px solid #e5e7eb;
+    flex-shrink: 0;
   }
 
   .dir {
@@ -197,7 +276,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 70%;
+    max-width: 75%;
   }
 
   .dir-empty {
@@ -210,12 +289,15 @@
     font-size: 0.78rem;
     color: #6b7280;
     font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
   }
 
-  .files {
+  .tree {
     flex: 1;
     overflow-y: auto;
-    padding-right: 0.25rem;
+    padding: 0.4rem 0;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 0.82rem;
   }
 
   .empty {
@@ -223,129 +305,128 @@
     text-align: center;
     color: #6b7280;
     font-style: italic;
+    font-family: system-ui, -apple-system, sans-serif;
   }
 
-  .group {
-    margin-bottom: 0.85rem;
-  }
-
-  .group-name {
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #6b7280;
-    margin: 0 0 0.3rem;
-    padding: 0 0.1rem;
+  .row {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    font-family: ui-monospace, SFMono-Regular, monospace;
+    gap: 0.45rem;
+    padding-top: 0.18rem;
+    padding-bottom: 0.18rem;
+    padding-right: 0.75rem;
+    line-height: 1.3;
+    width: 100%;
+    text-align: left;
   }
 
-  .group-count {
+  button.row {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+
+  button.row:hover {
     background: #f3f4f6;
+  }
+
+  .row.file:hover {
+    background: #f3f4f6;
+  }
+
+  .caret {
+    color: #9ca3af;
+    font-size: 0.65rem;
+    width: 10px;
+    flex-shrink: 0;
+  }
+
+  .folder-name {
+    color: #4b5563;
+    font-weight: 600;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-count {
+    background: #e5e7eb;
     color: #6b7280;
     font-size: 0.65rem;
-    padding: 0.05rem 0.35rem;
+    padding: 0.05rem 0.4rem;
     border-radius: 999px;
+    font-family: system-ui, -apple-system, sans-serif;
+    flex-shrink: 0;
   }
 
-  ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .file-name {
+    color: #0f0f0f;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .file {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.3rem 0.5rem;
-    border-radius: 6px;
-    transition: background 0.4s ease;
+  .size {
+    font-size: 0.7rem;
+    color: #9ca3af;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
   }
 
-  .file:hover {
-    background: #f9fafb;
-  }
-
-  .file.fresh {
+  /* Highlight states. The flow store fades these back to 'idle' after 3s.
+     Animation runs on each entry so a re-fired event re-triggers the flash. */
+  .file.file-fresh {
     background: #ecfccb;
-    animation: flash 3s ease-out forwards;
+    animation: flash-fresh 3s ease-out forwards;
   }
 
-  @keyframes flash {
+  .file.file-modified {
+    background: #dbeafe;
+    animation: flash-modified 3s ease-out forwards;
+  }
+
+  @keyframes flash-fresh {
     from {
       background: #84cc16;
+      color: #1a2e05;
     }
     to {
       background: transparent;
     }
   }
 
-  .name {
-    font-family: ui-monospace, SFMono-Regular, monospace;
-    font-size: 0.8rem;
-    color: #0f0f0f;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    background: transparent;
-    border: none;
-    padding: 0;
-  }
-
-  .size {
-    font-size: 0.72rem;
-    color: #9ca3af;
-    font-variant-numeric: tabular-nums;
-    flex-shrink: 0;
+  @keyframes flash-modified {
+    from {
+      background: #3b82f6;
+      color: #f6f6f6;
+    }
+    to {
+      background: transparent;
+    }
   }
 
   .error {
     color: #c0392b;
     font-size: 0.85rem;
-    margin: 0 0 0.5rem;
+    margin: 0;
     padding: 0.4rem 0.6rem;
     background: #fef2f2;
-    border-radius: 6px;
-    border: 1px solid #fca5a5;
-  }
-
-  .footer-meta {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding-top: 0.5rem;
-    margin-top: 0.5rem;
-    border-top: 1px solid #f3f4f6;
-    font-size: 0.72rem;
-    color: #9ca3af;
-  }
-
-  .poll-dot {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #10b981;
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.3;
-    }
+    border-bottom: 1px solid #fca5a5;
+    flex-shrink: 0;
   }
 
   @media (prefers-color-scheme: dark) {
+    .browser {
+      background: #1c1c1e;
+    }
+
     .head {
-      border-bottom-color: #3a3a3c;
+      background: #1c1c1e;
+      border-bottom-color: #2a2a2c;
     }
 
     .dir {
@@ -366,33 +447,20 @@
       color: #9ca3af;
     }
 
-    .group-name {
-      color: #9ca3af;
+    .caret {
+      color: #6b7280;
     }
 
-    .group-count {
+    .folder-name {
+      color: #d1d5db;
+    }
+
+    .folder-count {
       background: #2a2a2c;
       color: #9ca3af;
     }
 
-    .file:hover {
-      background: #2a2a2c;
-    }
-
-    .file.fresh {
-      background: #064e3b;
-    }
-
-    @keyframes flash {
-      from {
-        background: #16a34a;
-      }
-      to {
-        background: transparent;
-      }
-    }
-
-    .name {
+    .file-name {
       color: #f6f6f6;
     }
 
@@ -400,14 +468,42 @@
       color: #6b7280;
     }
 
+    button.row:hover,
+    .row.file:hover {
+      background: #2a2a2c;
+    }
+
+    .file.file-fresh {
+      background: #064e3b;
+    }
+
+    .file.file-modified {
+      background: #1e3a8a;
+    }
+
+    @keyframes flash-fresh {
+      from {
+        background: #16a34a;
+        color: #f6f6f6;
+      }
+      to {
+        background: transparent;
+      }
+    }
+
+    @keyframes flash-modified {
+      from {
+        background: #2563eb;
+        color: #f6f6f6;
+      }
+      to {
+        background: transparent;
+      }
+    }
+
     .error {
       background: #2a1c1c;
       border-color: #7f1d1d;
-    }
-
-    .footer-meta {
-      border-top-color: #3a3a3c;
-      color: #6b7280;
     }
   }
 </style>
