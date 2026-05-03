@@ -63,6 +63,13 @@ pub async fn api_dispatch(
             forward_to_sidecar(&app, &body, &method, &path).await
         }
 
+        // POST /memos/resume — pick up an interrupted run from the last
+        // on-disk checkpoint. Same job machinery as a fresh run; different
+        // worker entry point on the Python side.
+        ("POST", "/memos/resume") => {
+            forward_to_sidecar(&app, &body, &method, &path).await
+        }
+
         ("GET", p)
             if p.starts_with("/memos/")
                 && !p.ends_with("/events") =>

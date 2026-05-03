@@ -56,6 +56,15 @@
   });
 
   let stopping = $state(false);
+  let resuming = $state(false);
+  let resumeError = $state<string | null>(null);
+
+  // Resume is available whenever a run failed (whether the user stopped it or
+  // it errored) AND we know an output_dir on disk. The orchestrator's resume
+  // CLI walks that dir for checkpoints; with no dir, there's nothing to detect.
+  let canResume = $derived(
+    status === 'failed' && !!outputDir && !!settings.activeFirm
+  );
 
   function close() {
     flow.close();
@@ -68,6 +77,35 @@
   function startBrandSetup() {
     if (!settings.activeFirm) return;
     flow.startBrandSetup(settings.activeFirm);
+  }
+
+  async function resumeRun() {
+    if (resuming || !canResume || !stage) return;
+    resuming = true;
+    resumeError = null;
+    try {
+      const dealName = stage.payload.companyName;
+      const result = await getTransport().request<{ job_id: string; status: string }>(
+        'POST',
+        '/memos/resume',
+        {
+          repoPath: settings.repoPath,
+          firm: settings.activeFirm,
+          company_name: dealName,
+        }
+      );
+      // Reset the JobView to a fresh running state with the new job_id.
+      // markRunning clears events/files/timer, so the resume looks like a
+      // brand-new run visually — but the orchestrator picks up at the last
+      // checkpoint and the file watcher's initial snapshot fills the tree
+      // with everything already on disk.
+      flow.markRunning(stage.outline, stage.payload, result.job_id);
+    } catch (e) {
+      resumeError =
+        (e as { message?: string })?.message ?? 'Failed to start resume';
+    } finally {
+      resuming = false;
+    }
   }
 
   async function stopRun() {
@@ -161,8 +199,24 @@
 
   {#if errorMessage}
     <div class="banner banner-error">
-      <strong>Run failed.</strong>
-      {errorMessage}
+      <div class="banner-text">
+        <strong>Run failed.</strong>
+        {errorMessage}
+        {#if resumeError}
+          <span class="resume-error"> — {resumeError}</span>
+        {/if}
+      </div>
+      {#if canResume}
+        <button
+          type="button"
+          class="banner-cta resume-cta"
+          onclick={resumeRun}
+          disabled={resuming}
+          title="Pick up from the last on-disk checkpoint. Skips agents that already produced artifacts — no redundant API spend."
+        >
+          {resuming ? 'Resuming…' : 'Resume from last checkpoint →'}
+        </button>
+      {/if}
     </div>
   {:else if status === 'completed' && outputDir}
     <div class="banner banner-success">
@@ -397,6 +451,29 @@
     background: #fef2f2;
     color: #991b1b;
     border-bottom-color: #fecaca;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .resume-cta {
+    background: #5b21b6;
+    color: white;
+  }
+
+  .resume-cta:hover:not(:disabled) {
+    background: #4c1d95;
+  }
+
+  .resume-cta:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+
+  .resume-error {
+    font-style: italic;
+    opacity: 0.9;
   }
 
   .banner code {
