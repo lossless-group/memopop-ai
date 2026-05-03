@@ -226,7 +226,7 @@
       <div class="body">
         <p class="lede">
           Confirm and we'll spin up the orchestrator. Generation typically takes
-          15–45 minutes; you'll see live log output once the run starts.
+          10–15 minutes; you'll see live log output once the run starts.
         </p>
 
         <div class="summary">
