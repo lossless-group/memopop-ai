@@ -243,10 +243,13 @@
       {/if}
     </div>
     <p class="help">
-      Used when you click "Open in Finder" on a deal version's output_dir.
-      For Obsidian users: pick <code>Obsidian.app</code> here too — it'll open
-      the directory as a vault. For VS Code / Cursor: same idea (opens the
-      directory as a workspace).
+      Default vault root: the entire firm folder
+      (<code>io/{settings.activeFirm ?? '{firm}'}/</code>) — so you get
+      cross-deal context, shared notes, brand configs, the whole knowledge
+      graph in one place. The deal workspace exposes a smaller "just this
+      version" escape hatch when you want to focus on a single run.
+      For Obsidian: pick <code>Obsidian.app</code>. For VS Code / Cursor:
+      same idea (opens the directory as a workspace).
     </p>
   </div>
 </section>

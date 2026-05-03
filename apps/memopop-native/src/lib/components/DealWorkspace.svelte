@@ -91,11 +91,17 @@
     await loadFiles(name);
   }
 
-  // Two open paths intentionally:
-  //   • revealOutputDir — always Finder (so the "Open in Finder" button does
-  //     what its label says, regardless of the user's notebook preference).
-  //   • revealInPreferredNotebook — uses the configured markdown notebook
-  //     if any. Surfaced as a separate button when configured.
+  // The firm directory is the natural Obsidian vault — its configs/, all
+  // deals/, assets/, brand setup, etc. live under one root. Opening the
+  // firm gives the user the full knowledge-graph context (cross-deal links,
+  // shared notes), which is the whole point of a markdown notebook.
+  // The deal's version dir is still openable as a secondary action below.
+  let firmDir = $derived(
+    settings.repoPath ? `${settings.repoPath}/io/${firm}` : null
+  );
+
+  // Always Finder — the "Open in Finder" button promises Finder, not the
+  // user's preferred app. Keeps that contract regardless of notebook prefs.
   async function revealOutputDir() {
     if (!outputDir) return;
     try {
@@ -105,12 +111,25 @@
     }
   }
 
-  async function openInNotebook() {
+  // Default notebook open: the FIRM, not the version. Cross-deal context is
+  // the value of using a notebook; opening one version dir misses that.
+  async function openFirmInNotebook() {
+    if (!firmDir) return;
+    try {
+      await openWithPreferred(firmDir, { isDir: true });
+    } catch (e) {
+      loadError = `Couldn't open firm in notebook: ${e}`;
+    }
+  }
+
+  // Escape hatch: open just the current version dir in the notebook. Useful
+  // when collaborating on one deal without distracting cross-deal context.
+  async function openVersionInNotebook() {
     if (!outputDir) return;
     try {
       await openWithPreferred(outputDir, { isDir: true });
     } catch (e) {
-      loadError = `Couldn't open in notebook: ${e}`;
+      loadError = `Couldn't open version in notebook: ${e}`;
     }
   }
 
@@ -266,9 +285,9 @@
         <button
           type="button"
           class="notebook-btn"
-          onclick={openInNotebook}
-          disabled={!outputDir}
-          title="Open this version's folder in {notebookName}"
+          onclick={openFirmInNotebook}
+          disabled={!firmDir}
+          title="Open the entire {firm} firm folder as a {notebookName} vault — gives you cross-deal links, shared notes, brand configs, all in one knowledge graph."
         >
           📓 Open in {notebookName}
         </button>
@@ -294,6 +313,17 @@
         <span class="file-count">
           {files.length} {files.length === 1 ? 'file' : 'files'}
         </span>
+        {#if settings.markdownNotebook && outputDir}
+          {@const notebookName = (settings.markdownNotebook.split('/').pop() ?? '').replace(/\.app$/, '')}
+          <button
+            type="button"
+            class="notebook-version-link"
+            onclick={openVersionInNotebook}
+            title="Open just this version's folder (without the rest of the firm)"
+          >
+            📓 just this version →
+          </button>
+        {/if}
         {#if outputDir}
           <code class="path">{outputDir}</code>
         {/if}
@@ -511,6 +541,23 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .notebook-version-link {
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.72rem;
+    color: #5b21b6;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+
+  .notebook-version-link:hover {
+    background: #f5f3ff;
+    border-color: #ddd6fe;
+  }
+
   .path {
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-size: 0.75rem;
@@ -641,6 +688,13 @@
     .file-count,
     .path {
       color: #9ca3af;
+    }
+    .notebook-version-link {
+      color: #c4b5fd;
+    }
+    .notebook-version-link:hover {
+      background: #2a1f3d;
+      border-color: #5b21b6;
     }
     .row:hover {
       background: #2a1f3d;
