@@ -19,7 +19,7 @@
 
   let stage = $derived(flow.stage.kind === 'running_job' ? flow.stage : null);
   let status = $derived(stage?.status ?? 'queued');
-  let events = $derived(stage?.events ?? []);
+  let events = $derived(flow.events);
   let milestones = $derived(stage?.milestones ?? []);
   let outputDir = $derived(stage?.outputDir ?? null);
   let version = $derived(stage?.version ?? null);
@@ -28,12 +28,13 @@
   let isTerminal = $derived(status === 'completed' || status === 'failed');
   let isRunning = $derived(status === 'queued' || status === 'running');
 
-  // Wall-clock timer that ticks while the job is in flight.
+  // Wall-clock timer. Anchored on flow.startedAtMs (set once when the run
+  // is dispatched), so it's immune to events-array churn — slicing the
+  // 2000-cap tail and EventSource backlog replays no longer move the origin.
   let now = $state(Date.now());
-  let firstEventAt = $derived(events.length > 0 ? new Date(events[0].ts).getTime() : null);
   let elapsedSeconds = $derived(
-    firstEventAt && (isRunning || isTerminal)
-      ? Math.floor((now - firstEventAt) / 1000)
+    flow.startedAtMs && (isRunning || isTerminal)
+      ? Math.floor((now - flow.startedAtMs) / 1000)
       : 0
   );
 

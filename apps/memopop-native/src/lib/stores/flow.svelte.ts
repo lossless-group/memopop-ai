@@ -19,12 +19,28 @@ export interface DealPayload {
 
 export type JobRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 
-// In-memory event cap for the running_job stage. The Svelte 5 deep-reactivity
-// system creates a Proxy per nested object — at ~5–10k events on a long run,
-// the per-event proxy overhead plus #each's full re-realization causes layout
-// thrash and GC pauses ("screen going black every 20–30s"). 2000 is plenty
-// for tailing live; the persisted `.logs/runs/{job}.jsonl` has the full record.
+// In-memory event cap for live tailing. Two independent reasons to keep this
+// finite: (a) a 1000-line DOM is the comfortable upper bound for a {#each} pane
+// in WebView, (b) any cap at all means slice() runs occasionally — which is
+// fine because events live in $state.raw (see below) and slice is a flat
+// array allocation, not a proxy regeneration. Full event history is persisted
+// to .logs/runs/{job}.jsonl by the sidecar.
 const MAX_EVENTS = 2000;
+
+// Events do NOT live on the stage object — they live as $state.raw on the
+// FlowState class itself. Reasons:
+//   1. The stage object is $state (deep), which Proxy-wraps every nested
+//      value. With events on stage, every JobEvent becomes a Proxy, and every
+//      slice() regenerates 2000 Proxies wholesale. That's the cause of the
+//      "screen going black" GC/layout spike that 30+ events/sec triggered.
+//   2. $state.raw skips the deep proxy entirely. Reactivity fires only on
+//      reassignment, which is exactly what we want for an append-only log:
+//      we mutate via [...prev, evt] and the array reference change triggers
+//      one tick of downstream rerender.
+//   3. Timer reset bug: when events overflowed and slice(-MAX) ran,
+//      events[0].ts shifted forward, and any timer derived from events[0]
+//      (or worse, from a re-replayed backlog after an EventSource reconnect)
+//      jumped. startedAtMs is captured exactly once per run instead.
 
 export type FlowStage =
   | { kind: 'idle' }
@@ -38,7 +54,6 @@ export type FlowStage =
       payload: DealPayload;
       jobId: string;
       status: JobRunStatus;
-      events: JobEvent[];
       milestones: Milestone[];
       outputDir: string | null;
       version: string | null;
@@ -48,6 +63,14 @@ export type FlowStage =
 
 class FlowState {
   stage = $state<FlowStage>({ kind: 'idle' });
+  events = $state.raw<JobEvent[]>([]);
+  startedAtMs = $state<number | null>(null);
+  // Monotonic seq from the sidecar's bus. EventSource reconnects cause the
+  // server to replay its backlog (no Last-Event-ID is honored), so the same
+  // event can arrive twice. Dropping events with seq <= lastSeenSeq keeps the
+  // client log idempotent across reconnects. Plain field — not reactive,
+  // we don't render it.
+  private lastSeenSeq = -1;
 
   showDetail(outline: Outline) {
     this.stage = { kind: 'outline_detail', outline };
@@ -87,13 +110,15 @@ class FlowState {
   }
 
   markRunning(outline: Outline, payload: DealPayload, jobId: string) {
+    this.events = [];
+    this.startedAtMs = Date.now();
+    this.lastSeenSeq = -1;
     this.stage = {
       kind: 'running_job',
       outline,
       payload,
       jobId,
       status: 'queued',
-      events: [],
       milestones: [],
       outputDir: null,
       version: null,
@@ -103,15 +128,22 @@ class FlowState {
 
   appendEvent(event: JobEvent) {
     if (this.stage.kind !== 'running_job') return;
-    this.stage.events.push(event);
-    // Cap the event log to a rolling tail to keep webview memory and reactive
-    // proxy churn bounded. The full event stream is on disk via the sidecar's
-    // server-log.jsonl persistence, so dropping older entries here is a UI
-    // optimization only. Milestones are kept uncapped — they're small and the
-    // checklist needs the full pipeline view.
-    if (this.stage.events.length > MAX_EVENTS) {
-      this.stage.events = this.stage.events.slice(-MAX_EVENTS);
+
+    // Dedup by monotonic seq from the sidecar bus. If the server didn't stamp
+    // a seq (older sidecar, or a non-bus-published event), fall through.
+    const seq = (event as { seq?: number }).seq;
+    if (typeof seq === 'number') {
+      if (seq <= this.lastSeenSeq) return;
+      this.lastSeenSeq = seq;
     }
+
+    // Append-then-cap as a single reassignment. Spreading 2000 items is a flat
+    // memcpy (~50µs on a modern machine) and the array is raw, so this is one
+    // reactivity tick per event — no proxy creation churn.
+    const next = this.events.length >= MAX_EVENTS
+      ? [...this.events.slice(-(MAX_EVENTS - 1)), event]
+      : [...this.events, event];
+    this.events = next;
 
     if (event.type === 'status' && typeof event.status === 'string') {
       this.stage.status = event.status as JobRunStatus;
@@ -157,6 +189,9 @@ class FlowState {
   }
 
   close() {
+    this.events = [];
+    this.startedAtMs = null;
+    this.lastSeenSeq = -1;
     this.stage = { kind: 'idle' };
   }
 }
