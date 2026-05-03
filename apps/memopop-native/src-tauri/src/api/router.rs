@@ -26,6 +26,12 @@ pub async fn api_dispatch(
             queries::list_deals(repo_path, firm).await
         }
 
+        // GET /firms/{firm}/brand-config — forwarded to the sidecar, which reads
+        // io/{firm}/configs/brand-{firm}-config.yaml and returns it as JSON.
+        ("GET", p) if p.starts_with("/firms/") && p.ends_with("/brand-config") => {
+            forward_to_sidecar(&app, &body, &method, p).await
+        }
+
         ("GET", "/outlines") => {
             let repo_path = require_string(&body, "repoPath")?;
             queries::list_outlines(repo_path).await

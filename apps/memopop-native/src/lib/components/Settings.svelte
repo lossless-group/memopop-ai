@@ -154,6 +154,18 @@
         Auto-populate colors, fonts, and logo from your firm's website.
       </span>
     </div>
+    <div class="brand-setup-row">
+      <button
+        type="button"
+        class="brand-view-btn"
+        onclick={() => goto('/brand')}
+      >
+        View brand config →
+      </button>
+      <span class="brand-setup-hint">
+        Live design-system view of <code>brand-{settings.activeFirm}-config.yaml</code> — colors, logo, fonts. Edits save to YAML on blur.
+      </span>
+    </div>
   {/if}
 </section>
 
@@ -193,6 +205,29 @@
 
   .brand-setup-btn:hover {
     background: #4c1d95;
+  }
+
+  .brand-view-btn {
+    background: transparent;
+    color: #5b21b6;
+    border: 1px solid #5b21b6;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .brand-view-btn:hover {
+    background: #f5f3ff;
+  }
+
+  .brand-setup-hint code {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 0.85em;
+    background: #f3f4f6;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
   }
 
   .brand-setup-hint {
