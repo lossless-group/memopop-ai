@@ -53,11 +53,14 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 0.35rem;
     flex: 1 1 0;
     min-width: 0;
     /* Caption row reserves height even when empty so the layout doesn't jump
-       as agents activate and deactivate. */
+       as agents activate and deactivate. justify-content centers the
+       portrait/name/caption stack vertically within the row's height
+       (the row itself align-items:stretches each cell to its full height). */
   }
 
   .frame {
