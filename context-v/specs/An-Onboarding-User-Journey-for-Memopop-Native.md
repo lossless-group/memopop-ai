@@ -1,6 +1,65 @@
+---
+title: "An Onboarding User Journey for memopop-native"
+lede: "Experiences win on Onboarding. This spec outlines a user journey for onboarding users to memopop-native."
+date_authored_initial_draft: 2026-04-29
+date_authored_current_draft: 2026-04-30
+date_authored_final_draft:
+date_first_published:
+date_last_updated: 2026-04-29
+at_semantic_version: 0.0.0.1
+status: Draft
+augmented_with: Claude Code (Opus 4.7)
+category: Specification
+tags: [Tauri-Framework, User-Experience, User-Onboarding]
+authors:
+  - Michael Staton
+image_prompt: A group of young professionals in casual business attire, standing with their backs to the camera, looking at a large, intimidating ferry boat about to dock. Their luggage is scattered on the dock, and they look anxious and overwhelmed.
+date_created: 2026-04-29
+date_modified: 2026-04-29
+---
+
 # An Onboarding User Journey for memopop-native
 
 > Draft — captures the working understanding from session 2026-04-27. Not yet aligned. Edit freely.
+
+## Workflow Tracking
+
+> Snapshot as of 2026-04-30. Implementation pass landed in commit `1b3a8a3` (2026-04-27, auto-mode session). **Nothing has been runtime-tested yet** — the code compiles in our heads but `bun run tauri dev` has not been run since the changes landed. Treat "Done" entries below as "code written, not verified."
+
+### ✅ Done (code written, untested)
+
+- **Step 1 — Anchor the orchestrator.** `AnchorOrchestrator.svelte` renders as the gate when `settings.repoPath` is empty. Browse button + GitHub link via `opener` plugin. Replaces the old "Settings is the home" frame.
+- **Architectural reframe.** Home route (`+page.svelte`) is now `OutlineGallery` (with `AnchorOrchestrator` as the pre-anchor gate). Settings demoted to `/settings`, reachable from a gear icon in the persistent `Header.svelte`.
+- **Step 2 — Outline gallery.** `OutlineGallery.svelte` + `OutlineCard.svelte`. Responsive auto-fill grid. Cards show: type badge (color-coded direct vs. fund), firm tag (when firm-specific), title (humanized from filename), description, section count, compatible modes, version.
+- **Step 2 — Outline detail.** `OutlineDetail.svelte` modal — fetches full YAML, renders numbered section list with guiding-question counts. Esc closes. Resolves open question #3 in favor of modal.
+- **Step 3 — "Try this on a company →" CTA.** Wired on each card and in the detail modal footer. Routes to firm modal or deal modal depending on whether an active firm exists (logic in `flow.startTrying`).
+- **Step 4 — Firm creation modal.** `FirmCreationModal.svelte`. Live `io/{snake_case}/` preview as user types. Tip copy verbatim from spec. Submit calls `POST /actions/create-firm`, sets active firm, transitions to deal modal.
+- **Step 4a — Firm filesystem skeleton.** `actions::create_firm` in Rust. Creates `io/{slug}/configs/` and `io/{slug}/deals/`, writes `brand-{slug}-config.yaml` stub with only `company.conventional_name` populated. Refuses with 409 if firm exists.
+- **Step 4b — `.gitignore` handling.** `ensure_gitignore_entry` idempotently appends `/io/*/` with the MemoPop comment header. Skips if already present (also tolerates `/io/*` and `io/*/` variants).
+- **Slug parity.** TS slugify (`lib/slugify.ts`) and Rust slugify (`actions.rs`) implement identical rules so the live UI preview matches what the backend writes.
+- **Backend routes.** `GET /outlines`, `GET /outlines/{id}`, `POST /actions/create-firm` wired into the dispatcher (`router.rs`). Inherits the Transport seam from session 02 — no frontend infrastructure changes.
+- **Flow state machine.** `flow.svelte.ts` — discriminated union `idle | outline_detail | create_firm | create_deal`. One variable drives the modal layer. Resolves open question #8 implicitly (conditional renders, no explicit state machine needed).
+- **Header.** Brand mark (clickable home), active-firm pill (when set), gear icon for settings.
+
+### ⚠️ Partially done
+
+- **Step 5 — Hand off to the action.** `DealCreationModal.svelte` collects URL, optional company name, optional pitch deck (PDF picker), and mode (Evaluate / Justify). On submit it transitions to a "Ready to generate" confirmation panel showing captured inputs. **It does not actually run the orchestrator.** Honest copy in the modal flags this. The actual runner is the next spec.
+- **Active firm display.** Header pill shows the slug (`hypernova`), not the conventional name (`Hypernova`). Reading the brand config to display the original input is a small follow-up.
+- **Outline title.** Humanized from filename stem (e.g., `standard-direct-investment.yaml` → "Standard Direct Investment"). No `metadata.title` field exists in the existing outline YAMLs yet; parser is one line away from preferring it once that field is added.
+
+### ❌ Not done (in scope of this spec)
+
+- **Runtime testing.** Code has never been compiled or run since 2026-04-27_03 landed. Five flagged likely failure points in that changelog: `serde_yaml::Value::Tagged` move semantics, `$app/state` import, `opener` plugin URL allowlist, SvelteKit static adapter + `/settings`, `bind:group` on radio in Svelte 5.
+- **Breadcrumbs / progress bar.** Spec calls for a clear breadcrumb trail and progress indicator across the onboarding flow. Not implemented. Modals are dismissible but show no journey context.
+- **Compelling card metadata.** Open question #4. Cards render but the "tags / hero image / longer description" enrichment that makes a VC say *"oh shit, comprehensive"* is the next pass. Slot exists in `OutlineCard.svelte` to absorb these without changing the gallery layout.
+- **Empty / malformed `templates/outlines/`.** Open question #5. `queries::list_outlines` skips unparseable files silently — needs verification that the empty-folder UX is the spec'd "Hmm — this folder doesn't look like the orchestrator" message rather than a generic empty state.
+- **Recent memos on the gallery.** Open question #6. Not built.
+- **Firm switcher in the header.** Open question #7. The header shows the active firm as an indicator but has no dropdown; switching requires going to Settings. Single-firm users (most of them) never feel this.
+- **Multi-firm onboarding flow.** Adding a second firm currently means clearing settings. Acceptable for v1; flagged for later.
+
+### Out of scope (per spec's "What's NOT in This Spec")
+
+The action runner, outline customization, brand setup flow, brand auto-fetch, pitch-deck parsing, multi-user/auth, settings beyond path + active firm, branded export. Listed here only to keep the boundary visible.
 
 ## The Question This Spec Answers
 
