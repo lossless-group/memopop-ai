@@ -7,6 +7,7 @@
   import FirmCreationModal from '$lib/components/FirmCreationModal.svelte';
   import DealCreationModal from '$lib/components/DealCreationModal.svelte';
   import JobView from '$lib/components/JobView.svelte';
+  import BrandSetupModal from '$lib/components/BrandSetupModal.svelte';
 </script>
 
 {#if !settings.loaded}
@@ -24,6 +25,8 @@
     <FirmCreationModal outline={flow.stage.outline} />
   {:else if flow.stage.kind === 'create_deal' || flow.stage.kind === 'ready_to_run'}
     <DealCreationModal outline={flow.stage.outline} />
+  {:else if flow.stage.kind === 'brand_setup'}
+    <BrandSetupModal firm={flow.stage.firm} />
   {/if}
 {/if}
 

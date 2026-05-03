@@ -48,6 +48,13 @@ pub async fn api_dispatch(
             Ok(serde_json::json!({"stopped": true}))
         }
 
+        // Brand fetch + save — forwarded to the Python sidecar. fetch-brand drives
+        // a Claude tool-use loop (~10–20s) reading the firm's website; save-brand
+        // writes the user-confirmed config to disk.
+        ("POST", "/actions/fetch-brand") | ("POST", "/actions/save-brand") => {
+            forward_to_sidecar(&app, &body, &method, &path).await
+        }
+
         // --- Sidecar-forwarded routes (FastAPI orchestrator API) ---
         // The sidecar is lazy-spawned on the first /memos call. SSE streaming
         // (`/memos/{id}/events`) intentionally goes direct from the webview to
