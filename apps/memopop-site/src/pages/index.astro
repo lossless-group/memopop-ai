@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import GuiCallout from '../components/GuiCallout.astro';
 
 const stats = [
   { value: "33", label: "Specialized Agents" },
@@ -238,6 +239,8 @@ const base = import.meta.env.BASE_URL;
         </div>
         <p class="cli-note">No flags, no file paths. The interactive CLI auto-discovers firms, deals, and versions.</p>
       </section>
+
+      <GuiCallout />
 
       <div class="separator"></div>
 

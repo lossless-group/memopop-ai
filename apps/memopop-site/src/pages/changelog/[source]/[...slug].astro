@@ -1,6 +1,7 @@
 ---
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
+import GuiCallout from '../../../components/GuiCallout.astro';
 
 type Source = 'orchestrator' | 'native' | 'site' | 'monorepo';
 
@@ -126,6 +127,8 @@ const base = import.meta.env.BASE_URL;
       <article class="entry-body">
         <Content />
       </article>
+
+      <GuiCallout />
     </div>
   </main>
 </BaseLayout>

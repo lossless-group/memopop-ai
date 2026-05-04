@@ -1,6 +1,7 @@
 ---
 import { getCollection, type CollectionEntry } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import GuiCallout from '../../components/GuiCallout.astro';
 
 type Source = 'orchestrator' | 'native' | 'site' | 'monorepo';
 
@@ -126,6 +127,8 @@ const base = import.meta.env.BASE_URL;
           <button class="filter-pill src-monorepo" data-filter="monorepo">Monorepo <span class="pill-count">{counts.monorepo}</span></button>
         </div>
       </header>
+
+      <GuiCallout />
 
       <ul class="timeline">
         {allEntries.map(entry => (
