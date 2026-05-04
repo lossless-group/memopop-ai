@@ -1,0 +1,370 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+type Source = 'orchestrator' | 'native' | 'site' | 'monorepo';
+
+const SOURCE_META: Record<Source, { label: string; collection: keyof CollectionRegistry }> = {
+  orchestrator: { label: 'Orchestrator', collection: 'changelog-orchestrator' },
+  native:       { label: 'Native',       collection: 'changelog-native' },
+  site:         { label: 'Site',         collection: 'changelog-site' },
+  monorepo:     { label: 'Monorepo',     collection: 'changelog-monorepo' },
+};
+
+type CollectionRegistry = {
+  'changelog-orchestrator': CollectionEntry<'changelog-orchestrator'>;
+  'changelog-native':       CollectionEntry<'changelog-native'>;
+  'changelog-site':         CollectionEntry<'changelog-site'>;
+  'changelog-monorepo':     CollectionEntry<'changelog-monorepo'>;
+};
+
+interface NormalizedEntry {
+  source: Source;
+  slug: string;
+  title: string;
+  summary: string;
+  date: Date | null;
+  category?: string;
+  version?: string;
+  tags: string[];
+}
+
+function deriveDateFromId(id: string): Date | null {
+  const match = id.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!match) return null;
+  const d = new Date(match[1]);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function pickDate(data: Record<string, unknown>, id: string): Date | null {
+  const candidates = [
+    'date_authored_initial_draft',
+    'date',
+    'date_first_published',
+    'date_authored_current_draft',
+    'date_created',
+    'date_modified',
+    'date_last_updated',
+  ];
+  for (const key of candidates) {
+    const v = data[key];
+    if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
+  }
+  return deriveDateFromId(id);
+}
+
+function pickString(data: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = data[k];
+    if (typeof v === 'string' && v.trim()) return v;
+  }
+  return undefined;
+}
+
+function normalize(source: Source, entry: { id: string; data: Record<string, unknown> }): NormalizedEntry {
+  const data = entry.data;
+  return {
+    source,
+    slug: entry.id,
+    title: pickString(data, 'title') ?? entry.id,
+    summary: pickString(data, 'lede', 'summary', 'description') ?? '',
+    date: pickDate(data, entry.id),
+    category: pickString(data, 'category'),
+    version: pickString(data, 'at_semantic_version'),
+    tags: Array.isArray(data.tags) ? (data.tags as string[]) : [],
+  };
+}
+
+const allEntries: NormalizedEntry[] = [];
+for (const [src, meta] of Object.entries(SOURCE_META) as Array<[Source, typeof SOURCE_META[Source]]>) {
+  const entries = await getCollection(meta.collection);
+  for (const entry of entries) {
+    allEntries.push(normalize(src, entry));
+  }
+}
+
+allEntries.sort((a, b) => {
+  const ad = a.date?.getTime() ?? 0;
+  const bd = b.date?.getTime() ?? 0;
+  return bd - ad;
+});
+
+const counts = (Object.keys(SOURCE_META) as Source[]).reduce<Record<Source, number>>(
+  (acc, s) => {
+    acc[s] = allEntries.filter(e => e.source === s).length;
+    return acc;
+  },
+  { orchestrator: 0, native: 0, site: 0, monorepo: 0 },
+);
+
+const dateFmt = (d: Date | null) =>
+  d
+    ? d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+    : '—';
+
+const base = import.meta.env.BASE_URL;
+---
+
+<BaseLayout title="Changelog — MemoPop AI">
+  <main class="main-content">
+    <div class="container">
+      <header class="page-header">
+        <a href={base} class="back-link">← Back to home</a>
+        <h1 class="page-title">Changelog</h1>
+        <p class="page-lede">
+          Every meaningful change across the MemoPop AI monorepo. Pulled from
+          markdown changelogs in each project — including the
+          <a href="https://github.com/lossless-group/investment-memo-orchestrator" target="_blank" rel="noopener">orchestrator</a>
+          (engine), the desktop client, this site, and the monorepo itself.
+        </p>
+
+        <div class="filters" id="source-filters">
+          <button class="filter-pill active" data-filter="all">All <span class="pill-count">{allEntries.length}</span></button>
+          <button class="filter-pill src-orchestrator" data-filter="orchestrator">Orchestrator <span class="pill-count">{counts.orchestrator}</span></button>
+          <button class="filter-pill src-native" data-filter="native">Native <span class="pill-count">{counts.native}</span></button>
+          <button class="filter-pill src-site" data-filter="site">Site <span class="pill-count">{counts.site}</span></button>
+          <button class="filter-pill src-monorepo" data-filter="monorepo">Monorepo <span class="pill-count">{counts.monorepo}</span></button>
+        </div>
+      </header>
+
+      <ul class="timeline">
+        {allEntries.map(entry => (
+          <li class="entry" data-source={entry.source}>
+            <div class="entry-meta">
+              <span class={`source-badge src-${entry.source}`}>{SOURCE_META[entry.source].label}</span>
+              <time class="entry-date">{dateFmt(entry.date)}</time>
+              {entry.version && <span class="entry-version">v{entry.version}</span>}
+              {entry.category && <span class="entry-category">{entry.category}</span>}
+            </div>
+            <a class="entry-link" href={`${base}changelog/${entry.source}/${entry.slug}`}>
+              <h2 class="entry-title">{entry.title}</h2>
+              {entry.summary && <p class="entry-summary">{entry.summary}</p>}
+            </a>
+            {entry.tags.length > 0 && (
+              <div class="entry-tags">
+                {entry.tags.slice(0, 6).map(tag => <span class="tag">{tag}</span>)}
+                {entry.tags.length > 6 && <span class="tag-more">+{entry.tags.length - 6}</span>}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  </main>
+</BaseLayout>
+
+<script>
+  const filterBar = document.getElementById('source-filters');
+  if (filterBar) {
+    filterBar.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const btn = target.closest('button[data-filter]') as HTMLButtonElement | null;
+      if (!btn) return;
+      const filter = btn.dataset.filter ?? 'all';
+      filterBar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll<HTMLElement>('.entry').forEach(el => {
+        el.style.display = filter === 'all' || el.dataset.source === filter ? '' : 'none';
+      });
+    });
+  }
+</script>
+
+<style>
+  .main-content {
+    min-height: 100vh;
+    padding: 2rem 0 4rem;
+  }
+
+  .container {
+    max-width: 950px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+
+  .page-header {
+    padding: 2rem 0 2.5rem;
+  }
+
+  .back-link {
+    display: inline-block;
+    font-size: 0.85rem;
+    color: var(--clr-lossless-accent--aquamarine);
+    text-decoration: none;
+    margin-bottom: 1.5rem;
+    transition: color 0.2s;
+  }
+
+  .back-link:hover { color: var(--clr-lossless-accent--brightest); }
+
+  .page-title {
+    font-size: clamp(2rem, 4vw, 2.75rem);
+    font-weight: 700;
+    margin: 0 0 1rem 0;
+    background: linear-gradient(135deg, var(--clr-lossless-accent--brightest) 0%, var(--clr-lossless-accent--purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .page-lede {
+    font-size: 1.05rem;
+    color: var(--clr-lossless-primary-light);
+    line-height: 1.7;
+    max-width: 750px;
+    margin: 0 0 2rem 0;
+  }
+
+  .page-lede a {
+    color: var(--clr-lossless-accent--brightest);
+    text-decoration: none;
+  }
+
+  .page-lede a:hover { text-decoration: underline; }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+  }
+
+  .filter-pill {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--clr-border-subtle);
+    color: var(--clr-lossless-primary-light);
+    padding: 0.4rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+
+  .filter-pill:hover {
+    border-color: rgba(4, 229, 229, 0.3);
+    color: var(--clr-lossless-primary);
+  }
+
+  .filter-pill.active {
+    background: rgba(4, 229, 229, 0.12);
+    border-color: rgba(4, 229, 229, 0.5);
+    color: var(--clr-lossless-accent--brightest);
+  }
+
+  .pill-count {
+    display: inline-block;
+    margin-left: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--clr-lossless-primary-dim);
+    font-weight: 400;
+  }
+
+  .filter-pill.active .pill-count { color: var(--clr-lossless-accent--brightest); }
+
+  .timeline {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .entry {
+    padding: 1.25rem 1.5rem;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid var(--clr-border-subtle);
+    border-radius: 10px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+
+  .entry:hover {
+    border-color: rgba(4, 229, 229, 0.3);
+  }
+
+  .entry-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.6rem;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+  }
+
+  .source-badge {
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.7rem;
+  }
+
+  .src-orchestrator { background: rgba(4, 229, 229, 0.12); color: var(--clr-lossless-accent--brightest); border: 1px solid rgba(4, 229, 229, 0.3); }
+  .src-native       { background: rgba(111, 255, 214, 0.10); color: var(--clr-lossless-accent--aquamarine); border: 1px solid rgba(111, 255, 214, 0.3); }
+  .src-site         { background: rgba(191, 35, 247, 0.10); color: #d98ff5; border: 1px solid rgba(191, 35, 247, 0.3); }
+  .src-monorepo     { background: rgba(234, 179, 8, 0.10); color: #fde047; border: 1px solid rgba(234, 179, 8, 0.3); }
+
+  .filter-pill.src-orchestrator.active { background: rgba(4, 229, 229, 0.12); border-color: rgba(4, 229, 229, 0.5); color: var(--clr-lossless-accent--brightest); }
+  .filter-pill.src-native.active       { background: rgba(111, 255, 214, 0.10); border-color: rgba(111, 255, 214, 0.5); color: var(--clr-lossless-accent--aquamarine); }
+  .filter-pill.src-site.active         { background: rgba(191, 35, 247, 0.10); border-color: rgba(191, 35, 247, 0.5); color: #d98ff5; }
+  .filter-pill.src-monorepo.active     { background: rgba(234, 179, 8, 0.10); border-color: rgba(234, 179, 8, 0.5); color: #fde047; }
+
+  .entry-date, .entry-version, .entry-category {
+    color: var(--clr-lossless-primary-dim);
+  }
+
+  .entry-version {
+    font-family: var(--ff-monospace);
+    font-size: 0.72rem;
+  }
+
+  .entry-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .entry-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--clr-lossless-primary);
+    margin: 0 0 0.4rem 0;
+    line-height: 1.4;
+  }
+
+  .entry-link:hover .entry-title {
+    color: var(--clr-lossless-accent--brightest);
+  }
+
+  .entry-summary {
+    font-size: 0.95rem;
+    color: var(--clr-lossless-primary-light);
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .entry-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.85rem;
+  }
+
+  .tag, .tag-more {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--clr-lossless-primary-dim);
+    font-family: var(--ff-monospace);
+  }
+
+  .tag-more { font-style: italic; }
+
+  @media (max-width: 600px) {
+    .entry { padding: 1rem 1.1rem; }
+    .entry-title { font-size: 1.02rem; }
+  }
+</style>
