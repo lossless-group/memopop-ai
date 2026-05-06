@@ -1,7 +1,7 @@
 {
   "name": "memopop-site",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "astro": "^5.16.6",
-    "@memopop/shared-styles": "workspace:*"
+    "astro-pagefind": "^1.8.3",
+    "pagefind": "^1.4.0"
   },
   "devDependencies": {
     "@astrojs/tailwind": "^6.0.0",

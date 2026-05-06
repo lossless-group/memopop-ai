@@ -1,85 +1,88 @@
 ---
+import Analytics from '@components/Analytics.astro';
+import '@styles/theme.css';
+
 interface Props {
   title: string;
   description?: string;
+  noindex?: boolean;
+  ogImage?: string;
+  ogType?: string;
+  publishedTime?: string;
+  modifiedTime?: string;
+  author?: string;
+  tags?: string[];
 }
 
-const { title, description = "Multi-agent investment memo orchestrator. From a company name to an institutional-quality investment memo with 33 specialized AI agents." } = Astro.props;
+const {
+  title,
+  description = 'Multi-agent investment memo orchestrator. Turn a company name into an institutional-quality investment memo with 33 specialized AI agents.',
+  noindex = false,
+  ogImage,
+  ogType = 'website',
+  publishedTime,
+  modifiedTime,
+  author,
+  tags = [],
+} = Astro.props;
+
+const base = import.meta.env.BASE_URL;
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site ?? 'https://lossless-group.github.io').toString();
 ---
 
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{title}</title>
-  <meta name="description" content={description}>
-  <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`}>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-</head>
-<body>
-  <slot />
-</body>
+<html lang="en" data-mode="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonicalUrl} />
+
+    {/* Resolve persisted mode pre-paint to avoid FOUC. */}
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem('memopop-mode');
+          var mode = stored === 'light' || stored === 'vibrant' || stored === 'dark'
+            ? stored
+            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          document.documentElement.setAttribute('data-mode', mode);
+        } catch (e) {
+          /* localStorage unavailable — leave default */
+        }
+      })();
+    </script>
+
+    {/* Open Graph */}
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    {publishedTime && <meta property="article:published_time" content={publishedTime} />}
+    {modifiedTime && <meta property="article:modified_time" content={modifiedTime} />}
+    {author && <meta property="article:author" content={author} />}
+    {tags.map((tag) => <meta property="article:tag" content={tag} />)}
+
+    {/* Twitter */}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    {ogImage && <meta name="twitter:image" content={ogImage} />}
+
+    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..900,30..100,0..1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <Analytics />
+  </head>
+  <body>
+    <div class="bg-mesh" aria-hidden="true"></div>
+    <slot />
+  </body>
 </html>
-
-<style is:global>
-  :root {
-    --clr-primary-bg: #0a0a0f;
-    --clr-primary-bg-alt: #11111a;
-    --clr-lossless-accent--brightest: #04e5e5;
-    --clr-lossless-accent--aquamarine: #6FFFD6;
-    --clr-lossless-accent--purple: #BF23F7;
-    --clr-lossless-primary: #f1f5f9;
-    --clr-lossless-primary-light: #94a3b8;
-    --clr-lossless-primary-dim: #64748b;
-    --clr-lossless-primary-dimmer: #475569;
-    --clr-border-subtle: rgba(255, 255, 255, 0.08);
-
-    --ff-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --ff-monospace: 'JetBrains Mono', 'Fira Code', monospace;
-
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-  }
-
-  *, *::before, *::after {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-
-  html {
-    scroll-behavior: smooth;
-  }
-
-  body {
-    font-family: var(--ff-sans);
-    font-size: 16px;
-    line-height: 1.6;
-    color: var(--clr-lossless-primary);
-    background: var(--clr-primary-bg);
-    min-height: 100vh;
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    line-height: 1.2;
-    font-weight: 700;
-  }
-
-  a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  ul {
-    list-style: none;
-  }
-
-  img {
-    max-width: 100%;
-    height: auto;
-  }
-</style>

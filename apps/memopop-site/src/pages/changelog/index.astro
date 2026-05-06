@@ -1,171 +1,147 @@
 ---
-import { getCollection, type CollectionEntry } from 'astro:content';
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import GuiCallout from '../../components/GuiCallout.astro';
+import { getCollection } from 'astro:content';
+import BaseLayout from '@layouts/BaseLayout.astro';
+import Header from '@components/Header.astro';
+import GuiCallout from '@components/GuiCallout.astro';
+import { readProvenance, threadStyle, pickDate, pickString, fmtDate, fromKindLabel } from '@lib/provenance';
 
-type Source = 'orchestrator' | 'native' | 'site' | 'monorepo';
+const base = import.meta.env.BASE_URL;
 
-const SOURCE_META: Record<Source, { label: string; collection: keyof CollectionRegistry }> = {
-  orchestrator: { label: 'Orchestrator', collection: 'changelog-orchestrator' },
-  native:       { label: 'Native',       collection: 'changelog-native' },
-  site:         { label: 'Site',         collection: 'changelog-site' },
-  monorepo:     { label: 'Monorepo',     collection: 'changelog-monorepo' },
-};
-
-type CollectionRegistry = {
-  'changelog-orchestrator': CollectionEntry<'changelog-orchestrator'>;
-  'changelog-native':       CollectionEntry<'changelog-native'>;
-  'changelog-site':         CollectionEntry<'changelog-site'>;
-  'changelog-monorepo':     CollectionEntry<'changelog-monorepo'>;
-};
-
-interface NormalizedEntry {
-  source: Source;
+interface Row {
+  source: string;
+  sourceKind: string;
   slug: string;
+  url: string;
   title: string;
   summary: string;
   date: Date | null;
-  category?: string;
   version?: string;
+  category?: string;
   tags: string[];
 }
 
-function deriveDateFromId(id: string): Date | null {
-  const match = id.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (!match) return null;
-  const d = new Date(match[1]);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+const rawEntries = await getCollection('changelog');
 
-function pickDate(data: Record<string, unknown>, id: string): Date | null {
-  const candidates = [
-    'date_authored_initial_draft',
-    'date',
-    'date_first_published',
-    'date_authored_current_draft',
-    'date_created',
-    'date_modified',
-    'date_last_updated',
-  ];
-  for (const key of candidates) {
-    const v = data[key];
-    if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
-  }
-  return deriveDateFromId(id);
-}
-
-function pickString(data: Record<string, unknown>, ...keys: string[]): string | undefined {
-  for (const k of keys) {
-    const v = data[k];
-    if (typeof v === 'string' && v.trim()) return v;
-  }
-  return undefined;
-}
-
-function normalize(source: Source, entry: { id: string; data: Record<string, unknown> }): NormalizedEntry {
-  const data = entry.data;
+const rows: Row[] = rawEntries.map((entry) => {
+  const data = entry.data as Record<string, unknown>;
+  const { from, fromKind } = readProvenance(data, 'memopop-ai');
+  const slugWithinPeer = entry.id.replace(new RegExp(`^${from}/`), '');
   return {
-    source,
-    slug: entry.id,
-    title: pickString(data, 'title') ?? entry.id,
+    source: from,
+    sourceKind: fromKind,
+    slug: slugWithinPeer,
+    url: `${base}changelog/${from}/${slugWithinPeer}/`,
+    title: pickString(data, 'title') ?? slugWithinPeer,
     summary: pickString(data, 'lede', 'summary', 'description') ?? '',
     date: pickDate(data, entry.id),
+    version: pickString(data, 'at_semantic_version', 'semantic_version'),
     category: pickString(data, 'category'),
-    version: pickString(data, 'at_semantic_version'),
     tags: Array.isArray(data.tags) ? (data.tags as string[]) : [],
   };
-}
-
-const allEntries: NormalizedEntry[] = [];
-for (const [src, meta] of Object.entries(SOURCE_META) as Array<[Source, typeof SOURCE_META[Source]]>) {
-  const entries = await getCollection(meta.collection);
-  for (const entry of entries) {
-    allEntries.push(normalize(src, entry));
-  }
-}
-
-allEntries.sort((a, b) => {
-  const ad = a.date?.getTime() ?? 0;
-  const bd = b.date?.getTime() ?? 0;
-  return bd - ad;
 });
 
-const counts = (Object.keys(SOURCE_META) as Source[]).reduce<Record<Source, number>>(
-  (acc, s) => {
-    acc[s] = allEntries.filter(e => e.source === s).length;
-    return acc;
-  },
-  { orchestrator: 0, native: 0, site: 0, monorepo: 0 },
-);
+rows.sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
 
-const dateFmt = (d: Date | null) =>
-  d
-    ? d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
-    : '—';
+const counts = new Map<string, { count: number; kind: string }>();
+for (const r of rows) {
+  const c = counts.get(r.source);
+  if (c) c.count++;
+  else counts.set(r.source, { count: 1, kind: r.sourceKind });
+}
 
-const base = import.meta.env.BASE_URL;
+const filterOptions = [...counts.entries()]
+  .map(([slug, { count, kind }]) => ({ slug, count, kind }))
+  .sort((a, b) => {
+    const order = { parent: 0, app: 1, package: 2 } as Record<string, number>;
+    if ((order[a.kind] ?? 9) !== (order[b.kind] ?? 9)) return (order[a.kind] ?? 9) - (order[b.kind] ?? 9);
+    return a.slug.localeCompare(b.slug);
+  });
 ---
 
-<BaseLayout title="Changelog — MemoPop AI">
-  <main class="main-content">
-    <div class="container">
-      <header class="page-header">
-        <a href={base} class="back-link">← Back to home</a>
-        <h1 class="page-title">Changelog</h1>
-        <p class="page-lede">
-          Every meaningful change across the MemoPop AI monorepo. Pulled from
-          markdown changelogs in each project — including the
-          <a href="https://github.com/lossless-group/investment-memo-orchestrator" target="_blank" rel="noopener">orchestrator</a>
-          (engine), the desktop client, this site, and the monorepo itself.
-        </p>
+<BaseLayout title="Changelog — MemoPop AI" description="Every meaningful change across the MemoPop AI monorepo, surfaced by app and package.">
+  <Header active="changelog" />
 
-        <div class="filters" id="source-filters">
-          <button class="filter-pill active" data-filter="all">All <span class="pill-count">{allEntries.length}</span></button>
-          <button class="filter-pill src-orchestrator" data-filter="orchestrator">Orchestrator <span class="pill-count">{counts.orchestrator}</span></button>
-          <button class="filter-pill src-native" data-filter="native">Native <span class="pill-count">{counts.native}</span></button>
-          <button class="filter-pill src-site" data-filter="site">Site <span class="pill-count">{counts.site}</span></button>
-          <button class="filter-pill src-monorepo" data-filter="monorepo">Monorepo <span class="pill-count">{counts.monorepo}</span></button>
-        </div>
+  <main class="archive">
+    <div class="container-narrow">
+      <header class="archive__head">
+        <p class="eyebrow">Ship log</p>
+        <h1 class="archive__title gradient-text">Changelog</h1>
+        <p class="archive__lede">
+          Every meaningful change across the monorepo — the
+          <a href="https://github.com/lossless-group/investment-memo-orchestrator" target="_blank" rel="noopener">orchestrator</a>
+          (engine), the desktop client, this site, and the workspace itself. Discovered automatically;
+          adding a new app makes it appear here.
+        </p>
       </header>
 
-      <GuiCallout />
-
-      <ul class="timeline">
-        {allEntries.map(entry => (
-          <li class="entry" data-source={entry.source}>
-            <div class="entry-meta">
-              <span class={`source-badge src-${entry.source}`}>{SOURCE_META[entry.source].label}</span>
-              <time class="entry-date">{dateFmt(entry.date)}</time>
-              {entry.version && <span class="entry-version">v{entry.version}</span>}
-              {entry.category && <span class="entry-category">{entry.category}</span>}
-            </div>
-            <a class="entry-link" href={`${base}changelog/${entry.source}/${entry.slug}`}>
-              <h2 class="entry-title">{entry.title}</h2>
-              {entry.summary && <p class="entry-summary">{entry.summary}</p>}
-            </a>
-            {entry.tags.length > 0 && (
-              <div class="entry-tags">
-                {entry.tags.slice(0, 6).map(tag => <span class="tag">{tag}</span>)}
-                {entry.tags.length > 6 && <span class="tag-more">+{entry.tags.length - 6}</span>}
-              </div>
-            )}
-          </li>
+      <div class="filters" id="source-filters" role="tablist" aria-label="Filter by source">
+        <button class="filter-pill is-active" data-filter="all" role="tab" aria-selected="true">
+          All <span class="filter-pill__count">{rows.length}</span>
+        </button>
+        {filterOptions.map((opt) => (
+          <button
+            class="filter-pill"
+            data-filter={opt.slug}
+            role="tab"
+            aria-selected="false"
+            style={threadStyle(opt.slug)}
+          >
+            <span class="filter-pill__dot" aria-hidden="true"></span>
+            {opt.slug}
+            <span class="filter-pill__count">{opt.count}</span>
+            <span class="filter-pill__kind mono">{fromKindLabel(opt.kind)}</span>
+          </button>
         ))}
-      </ul>
+      </div>
+
+      {rows.length === 0 ? (
+        <div class="archive__empty">
+          <p>No published changelog entries yet.</p>
+        </div>
+      ) : (
+        <ul class="entries" data-pagefind-ignore="all">
+          {rows.map((row) => (
+            <li class="entry" data-source={row.source}>
+              <div class="entry__meta">
+                <span class="from-tag mono" style={threadStyle(row.source)}>{row.source}</span>
+                {row.date && <time class="entry__date mono" datetime={row.date.toISOString()}>{fmtDate(row.date)}</time>}
+                {row.version && <span class="pill mono">v{row.version}</span>}
+                {row.category && <span class="entry__category">{row.category}</span>}
+              </div>
+              <a class="entry__link" href={row.url}>
+                <h2 class="entry__title">{row.title}</h2>
+                {row.summary && <p class="entry__summary">{row.summary}</p>}
+              </a>
+              {row.tags.length > 0 && (
+                <div class="entry__tags">
+                  {row.tags.slice(0, 6).map((t) => <span class="tag mono">{t}</span>)}
+                  {row.tags.length > 6 && <span class="tag tag--more mono">+{row.tags.length - 6}</span>}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <GuiCallout variant="compact" />
     </div>
   </main>
 </BaseLayout>
 
 <script>
-  const filterBar = document.getElementById('source-filters');
-  if (filterBar) {
-    filterBar.addEventListener('click', (e) => {
+  const bar = document.getElementById('source-filters');
+  if (bar) {
+    bar.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
       const btn = target.closest('button[data-filter]') as HTMLButtonElement | null;
       if (!btn) return;
       const filter = btn.dataset.filter ?? 'all';
-      filterBar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
-      document.querySelectorAll<HTMLElement>('.entry').forEach(el => {
+      bar.querySelectorAll('button').forEach((b) => {
+        const active = b === btn;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      document.querySelectorAll<HTMLElement>('.entry').forEach((el) => {
         el.style.display = filter === 'all' || el.dataset.source === filter ? '' : 'none';
       });
     });
@@ -173,201 +149,177 @@ const base = import.meta.env.BASE_URL;
 </script>
 
 <style>
-  .main-content {
-    min-height: 100vh;
-    padding: 2rem 0 4rem;
+  .archive {
+    padding: 3rem 0 5rem;
   }
 
-  .container {
-    max-width: 950px;
-    margin: 0 auto;
-    padding: 0 1.5rem;
+  .archive__head { margin-bottom: 2.5rem; }
+
+  .archive__title {
+    font-size: clamp(2.25rem, 5vw, 3.25rem);
+    margin: 0.5rem 0 1rem;
   }
 
-  .page-header {
-    padding: 2rem 0 2.5rem;
+  .archive__lede {
+    font-size: 1.1rem;
+    color: var(--color-text-soft);
+    line-height: 1.65;
+    max-width: 65ch;
   }
 
-  .back-link {
-    display: inline-block;
-    font-size: 0.85rem;
-    color: var(--clr-lossless-accent--aquamarine);
-    text-decoration: none;
-    margin-bottom: 1.5rem;
-    transition: color 0.2s;
+  .archive__lede a {
+    color: var(--color-accent);
+    border-bottom: 1px solid color-mix(in oklab, var(--color-accent) 35%, transparent);
   }
+  .archive__lede a:hover { color: var(--color-accent-soft); }
 
-  .back-link:hover { color: var(--clr-lossless-accent--brightest); }
-
-  .page-title {
-    font-size: clamp(2rem, 4vw, 2.75rem);
-    font-weight: 700;
-    margin: 0 0 1rem 0;
-    background: linear-gradient(135deg, var(--clr-lossless-accent--brightest) 0%, var(--clr-lossless-accent--purple) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  .archive__empty {
+    padding: 3rem 0;
+    color: var(--color-text-dim);
+    text-align: center;
   }
-
-  .page-lede {
-    font-size: 1.05rem;
-    color: var(--clr-lossless-primary-light);
-    line-height: 1.7;
-    max-width: 750px;
-    margin: 0 0 2rem 0;
-  }
-
-  .page-lede a {
-    color: var(--clr-lossless-accent--brightest);
-    text-decoration: none;
-  }
-
-  .page-lede a:hover { text-decoration: underline; }
 
   .filters {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    padding-top: 0.5rem;
+    margin-bottom: 2rem;
+    padding: 0.85rem 0;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
   }
 
   .filter-pill {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--clr-border-subtle);
-    color: var(--clr-lossless-primary-light);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
     padding: 0.4rem 0.85rem;
-    border-radius: 999px;
-    font-size: 0.85rem;
+    border: 1px solid var(--color-border-strong);
+    background: color-mix(in oklab, var(--color-text) 4%, transparent);
+    color: var(--color-text-soft);
+    border-radius: var(--radius-pill);
+    font-family: var(--font__mono);
+    font-size: 0.78rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
-    font-family: inherit;
+    transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+  }
+
+  .filter-pill__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--from-thread, var(--thread__default));
+  }
+
+  .filter-pill__count {
+    color: var(--color-text-dim);
+    font-size: 0.72rem;
+  }
+  .filter-pill__kind {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-faint);
+    margin-left: 0.15rem;
   }
 
   .filter-pill:hover {
-    border-color: rgba(4, 229, 229, 0.3);
-    color: var(--clr-lossless-primary);
+    color: var(--color-text);
+    border-color: var(--color-border-accent);
   }
 
-  .filter-pill.active {
-    background: rgba(4, 229, 229, 0.12);
-    border-color: rgba(4, 229, 229, 0.5);
-    color: var(--clr-lossless-accent--brightest);
+  .filter-pill.is-active {
+    background: color-mix(in oklab, var(--from-thread, var(--color-accent)) 12%, transparent);
+    border-color: color-mix(in oklab, var(--from-thread, var(--color-accent)) 50%, transparent);
+    color: var(--from-thread, var(--color-accent));
   }
+  .filter-pill.is-active .filter-pill__count,
+  .filter-pill.is-active .filter-pill__kind { color: inherit; opacity: 0.85; }
 
-  .pill-count {
-    display: inline-block;
-    margin-left: 0.35rem;
-    font-size: 0.75rem;
-    color: var(--clr-lossless-primary-dim);
-    font-weight: 400;
-  }
-
-  .filter-pill.active .pill-count { color: var(--clr-lossless-accent--brightest); }
-
-  .timeline {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+  .entries {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    margin: 0;
+    padding: 0;
   }
 
   .entry {
     padding: 1.25rem 1.5rem;
-    background: rgba(255, 255, 255, 0.025);
-    border: 1px solid var(--clr-border-subtle);
-    border-radius: 10px;
-    transition: border-color 0.2s, transform 0.2s;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    transition: border-color var(--transition-fast), transform var(--transition-fast);
   }
 
   .entry:hover {
-    border-color: rgba(4, 229, 229, 0.3);
+    border-color: var(--color-border-accent);
+    transform: translateY(-1px);
   }
 
-  .entry-meta {
+  .entry__meta {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.65rem;
     margin-bottom: 0.6rem;
     flex-wrap: wrap;
     font-size: 0.78rem;
   }
 
-  .source-badge {
-    padding: 0.15rem 0.55rem;
-    border-radius: 4px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: 0.7rem;
+  .entry__date {
+    color: var(--color-text-dim);
+    font-size: 0.78rem;
   }
 
-  .src-orchestrator { background: rgba(4, 229, 229, 0.12); color: var(--clr-lossless-accent--brightest); border: 1px solid rgba(4, 229, 229, 0.3); }
-  .src-native       { background: rgba(111, 255, 214, 0.10); color: var(--clr-lossless-accent--aquamarine); border: 1px solid rgba(111, 255, 214, 0.3); }
-  .src-site         { background: rgba(191, 35, 247, 0.10); color: #d98ff5; border: 1px solid rgba(191, 35, 247, 0.3); }
-  .src-monorepo     { background: rgba(234, 179, 8, 0.10); color: #fde047; border: 1px solid rgba(234, 179, 8, 0.3); }
-
-  .filter-pill.src-orchestrator.active { background: rgba(4, 229, 229, 0.12); border-color: rgba(4, 229, 229, 0.5); color: var(--clr-lossless-accent--brightest); }
-  .filter-pill.src-native.active       { background: rgba(111, 255, 214, 0.10); border-color: rgba(111, 255, 214, 0.5); color: var(--clr-lossless-accent--aquamarine); }
-  .filter-pill.src-site.active         { background: rgba(191, 35, 247, 0.10); border-color: rgba(191, 35, 247, 0.5); color: #d98ff5; }
-  .filter-pill.src-monorepo.active     { background: rgba(234, 179, 8, 0.10); border-color: rgba(234, 179, 8, 0.5); color: #fde047; }
-
-  .entry-date, .entry-version, .entry-category {
-    color: var(--clr-lossless-primary-dim);
+  .entry__category {
+    color: var(--color-text-dim);
+    font-size: 0.78rem;
   }
 
-  .entry-version {
-    font-family: var(--ff-monospace);
-    font-size: 0.72rem;
-  }
-
-  .entry-link {
+  .entry__link {
     display: block;
-    text-decoration: none;
     color: inherit;
   }
 
-  .entry-title {
-    font-size: 1.15rem;
+  .entry__title {
+    font-family: var(--font__display);
+    font-size: 1.2rem;
     font-weight: 600;
-    color: var(--clr-lossless-primary);
+    color: var(--color-text);
     margin: 0 0 0.4rem 0;
-    line-height: 1.4;
+    line-height: 1.35;
   }
 
-  .entry-link:hover .entry-title {
-    color: var(--clr-lossless-accent--brightest);
+  .entry__link:hover .entry__title {
+    color: var(--color-accent);
   }
 
-  .entry-summary {
+  .entry__summary {
     font-size: 0.95rem;
-    color: var(--clr-lossless-primary-light);
+    color: var(--color-text-soft);
     line-height: 1.6;
     margin: 0;
   }
 
-  .entry-tags {
+  .entry__tags {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
     margin-top: 0.85rem;
   }
 
-  .tag, .tag-more {
+  .tag {
     font-size: 0.7rem;
     padding: 0.15rem 0.5rem;
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--clr-lossless-primary-dim);
-    font-family: var(--ff-monospace);
+    background: color-mix(in oklab, var(--color-text) 4%, transparent);
+    color: var(--color-text-dim);
   }
-
-  .tag-more { font-style: italic; }
+  .tag--more { font-style: italic; }
 
   @media (max-width: 600px) {
     .entry { padding: 1rem 1.1rem; }
-    .entry-title { font-size: 1.02rem; }
+    .entry__title { font-size: 1.05rem; }
   }
 </style>
