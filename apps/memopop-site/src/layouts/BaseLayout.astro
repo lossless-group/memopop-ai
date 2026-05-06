@@ -1,33 +1,28 @@
 ---
 import Analytics from '@components/Analytics.astro';
+import MetaTags from '@components/MetaTags.astro';
+import { seoFromPage, type SeoMeta } from '@lib/seo';
 import '@styles/theme.css';
 
 interface Props {
-  title: string;
+  /** Pre-resolved SEO metadata. Use seoFromPage() or seoFromEntry() to build. */
+  seo?: SeoMeta;
+  /** Convenience: pass a title and we'll resolve a default SeoMeta from it. */
+  title?: string;
   description?: string;
-  noindex?: boolean;
-  ogImage?: string;
-  ogType?: string;
-  publishedTime?: string;
-  modifiedTime?: string;
-  author?: string;
-  tags?: string[];
 }
 
-const {
-  title,
-  description = 'Multi-agent investment memo orchestrator. Turn a company name into an institutional-quality investment memo with 33 specialized AI agents.',
-  noindex = false,
-  ogImage,
-  ogType = 'website',
-  publishedTime,
-  modifiedTime,
-  author,
-  tags = [],
-} = Astro.props;
+const { seo: seoProp, title, description } = Astro.props;
+
+const seo: SeoMeta =
+  seoProp ??
+  seoFromPage({
+    astro: { url: Astro.url, site: Astro.site },
+    title: title ?? 'MemoPop AI',
+    description,
+  });
 
 const base = import.meta.env.BASE_URL;
-const canonicalUrl = new URL(Astro.url.pathname, Astro.site ?? 'https://lossless-group.github.io').toString();
 ---
 
 <!DOCTYPE html>
@@ -35,10 +30,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site ?? 'https://lossless
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{title}</title>
-    <meta name="description" content={description} />
-    {noindex && <meta name="robots" content="noindex" />}
-    <link rel="canonical" href={canonicalUrl} />
+    <meta name="theme-color" content="#0a0a14" />
 
     {/* Resolve persisted mode pre-paint to avoid FOUC. */}
     <script is:inline>
@@ -55,22 +47,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site ?? 'https://lossless
       })();
     </script>
 
-    {/* Open Graph */}
-    <meta property="og:type" content={ogType} />
-    <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
-    <meta property="og:url" content={canonicalUrl} />
-    {ogImage && <meta property="og:image" content={ogImage} />}
-    {publishedTime && <meta property="article:published_time" content={publishedTime} />}
-    {modifiedTime && <meta property="article:modified_time" content={modifiedTime} />}
-    {author && <meta property="article:author" content={author} />}
-    {tags.map((tag) => <meta property="article:tag" content={tag} />)}
-
-    {/* Twitter */}
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content={title} />
-    <meta name="twitter:description" content={description} />
-    {ogImage && <meta name="twitter:image" content={ogImage} />}
+    <MetaTags seo={seo} />
 
     <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

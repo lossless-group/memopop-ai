@@ -98,6 +98,9 @@ const changelogSchema = z
     image: lenientString,
     image_prompt: lenientString,
     image_text: lenientString,
+    banner_image: lenientString,
+    portrait_image: lenientString,
+    square_image: lenientString,
   })
   .passthrough();
 
