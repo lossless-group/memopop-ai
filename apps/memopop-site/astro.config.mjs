@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import pagefind from 'astro-pagefind';
+import sitemap from '@astrojs/sitemap';
 
 // https://astro.build/config
 //
@@ -14,10 +15,23 @@ export default defineConfig({
   base: '/memopop-ai/',
   trailingSlash: 'ignore',
 
-  // astro-pagefind runs Pagefind against `dist/` after `astro build` and copies
-  // pagefind/* into the published output. Search runs entirely client-side from
-  // the static index — no backend, no cost, mode-pivot-aware via theme tokens.
-  integrations: [pagefind()],
+  integrations: [
+    // astro-pagefind runs Pagefind against `dist/` after `astro build` and copies
+    // pagefind/* into the published output. Search runs entirely client-side from
+    // the static index — no backend, no cost, mode-pivot-aware via theme tokens.
+    pagefind(),
+
+    // @astrojs/sitemap auto-generates sitemap-index.xml + sitemap-0.xml from
+    // every page Astro emits. Filter excludes the llms.txt endpoints (those
+    // serve LLMs, not search engines) and the 404 page.
+    sitemap({
+      filter: (page) =>
+        !page.includes('/llms.txt') &&
+        !page.includes('/llms-full.txt') &&
+        !page.endsWith('/404/') &&
+        !page.endsWith('/404'),
+    }),
+  ],
 
   build: {
     // Pagefind needs a stable per-page URL — use directory output so each
