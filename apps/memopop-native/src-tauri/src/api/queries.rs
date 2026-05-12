@@ -5,6 +5,28 @@ use serde_json::{json, Value};
 
 use super::ApiError;
 
+/// Resolves the sibling `memopop-orchestrator/` directory inside this
+/// monorepo, anchored at the Tauri crate's compile-time location. Returns
+/// `None` outside of a dev install (release builds shipped elsewhere will not
+/// find the path) — callers fall back to the manual Browse flow.
+///
+/// Why this exists: the orchestrator was previously at
+/// `ai-labs/investment-memo-orchestrator/` and is now at
+/// `ai-labs/memopop-ai/apps/memopop-orchestrator/`. Stale `repoPath` values
+/// in the Tauri store kept pointing at the old location after the move.
+pub fn default_orchestrator_path() -> Option<String> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let candidate = manifest.parent()?.parent()?.join("memopop-orchestrator");
+    if candidate.join("pyproject.toml").is_file() {
+        candidate
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.to_str().map(String::from))
+    } else {
+        None
+    }
+}
+
 pub async fn list_firms(repo_path: &str) -> Result<Value, ApiError> {
     let io_dir = Path::new(repo_path).join("io");
     if !io_dir.is_dir() {

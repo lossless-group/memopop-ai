@@ -1,4 +1,5 @@
 import { Store } from '@tauri-apps/plugin-store';
+import { getTransport } from '$lib/transport';
 
 const STORE_FILE = 'settings.json';
 
@@ -23,6 +24,26 @@ class SettingsState {
     this.activeFirm = (await this.#store.get<string>('activeFirm')) ?? null;
     this.markdownEditor = (await this.#store.get<string>('markdownEditor')) ?? null;
     this.markdownNotebook = (await this.#store.get<string>('markdownNotebook')) ?? null;
+
+    // Auto-seed the sibling orchestrator path when nothing is saved. Only
+    // resolves on dev installs (Rust uses CARGO_MANIFEST_DIR at compile time);
+    // release builds shipped elsewhere fall through to the manual Browse flow.
+    if (this.repoPath === null) {
+      try {
+        const res = await getTransport().request<{ path: string | null }>(
+          'GET',
+          '/defaults/orchestrator-path',
+        );
+        if (res.path) {
+          this.repoPath = res.path;
+          await this.#store.set('repoPath', res.path);
+          await this.#store.save();
+        }
+      } catch {
+        // Non-fatal — user can still set it via Settings.
+      }
+    }
+
     this.loaded = true;
   }
 

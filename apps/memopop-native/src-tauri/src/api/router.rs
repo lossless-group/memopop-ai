@@ -79,6 +79,14 @@ pub async fn api_dispatch(
             queries::list_outlines(repo_path).await
         }
 
+        // Returns the monorepo-sibling orchestrator path if this build can
+        // resolve it (dev installs only). Used by the settings store to
+        // auto-seed `repoPath` when nothing is saved, so a fresh dev install
+        // doesn't require a manual Browse.
+        ("GET", "/defaults/orchestrator-path") => {
+            Ok(serde_json::json!({ "path": queries::default_orchestrator_path() }))
+        }
+
         ("GET", p) if p.starts_with("/outlines/") => {
             let repo_path = require_string(&body, "repoPath")?;
             let id = p.trim_start_matches("/outlines/");

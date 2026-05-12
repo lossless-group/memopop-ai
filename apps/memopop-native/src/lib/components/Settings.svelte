@@ -60,7 +60,7 @@
     const selected = await open({
       directory: true,
       multiple: false,
-      title: 'Select the investment-memo-orchestrator repo root',
+      title: 'Select the memopop-orchestrator repo root',
     });
     if (typeof selected === 'string') {
       await settings.setRepoPath(selected);
@@ -119,7 +119,7 @@
   </p>
 
   <div class="field">
-    <label for="repo-path" title="The local directory where you cloned the investment-memo-orchestrator">Orchestrator repo path</label>
+    <label for="repo-path" title="The local directory where you cloned the memopop-orchestrator (sibling of memopop-native in the monorepo)">Orchestrator repo path</label>
     <div class="row">
       <input
         id="repo-path"

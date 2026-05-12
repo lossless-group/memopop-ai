@@ -16,7 +16,7 @@
     const selected = await open({
       directory: true,
       multiple: false,
-      title: 'Select the investment-memo-orchestrator repo root',
+      title: 'Select the memopop-orchestrator repo root',
     });
     if (typeof selected === 'string') {
       await settings.setRepoPath(selected);
