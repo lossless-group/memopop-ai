@@ -121,6 +121,12 @@ pub async fn api_dispatch(
             forward_to_sidecar(&app, &body, &method, &path).await
         }
 
+        // Cross-version source-catalog merge. Parses every version's
+        // 3-source-catalog/, dedupes per section, writes exports/best-of-sources/.
+        ("POST", "/actions/curate-sources") => {
+            forward_to_sidecar(&app, &body, &method, &path).await
+        }
+
         // --- Sidecar-forwarded routes (FastAPI orchestrator API) ---
         // The sidecar is lazy-spawned on the first /memos call. SSE streaming
         // (`/memos/{id}/events`) intentionally goes direct from the webview to

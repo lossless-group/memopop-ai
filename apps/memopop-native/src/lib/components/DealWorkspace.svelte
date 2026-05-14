@@ -34,6 +34,18 @@
   let loadError = $state<string | null>(null);
   let collapsed = $state<Set<string>>(new Set());
 
+  interface CurationResult {
+    output_dir: string;
+    versions_scanned: string[];
+    total_unique_sources: number;
+    total_section_entries: number;
+    sections: { number: string; slug: string; source_count: number }[];
+  }
+
+  let curating = $state(false);
+  let curationResult = $state<CurationResult | null>(null);
+  let curationError = $state<string | null>(null);
+
   // Initial load: pull versions, then fetch the most recent (or ?v= override).
   onMount(async () => {
     if (!settings.repoPath) return;
@@ -119,6 +131,40 @@
       await openWithPreferred(firmDir, { isDir: true });
     } catch (e) {
       loadError = `Couldn't open firm in notebook: ${e}`;
+    }
+  }
+
+  // Cross-version curation: walks every outputs/{deal}-v*/3-source-catalog,
+  // dedupes by URL per section, keeps the highest-ranked status, drops
+  // hallucinated/invalid. Writes a single best-of-sources/ under exports/.
+  // The result banner sticks around with a button to reveal the dir — we
+  // don't auto-load it into the version tree because it's deal-level, not
+  // version-scoped.
+  async function curateBestSources() {
+    if (!settings.repoPath || curating) return;
+    curating = true;
+    curationError = null;
+    curationResult = null;
+    try {
+      curationResult = await getTransport().request<CurationResult>(
+        'POST',
+        '/actions/curate-sources',
+        { repoPath: settings.repoPath, firm, deal }
+      );
+    } catch (e) {
+      curationError =
+        (e as { message?: string })?.message ?? 'Failed to curate sources';
+    } finally {
+      curating = false;
+    }
+  }
+
+  async function revealCurationDir() {
+    if (!curationResult?.output_dir) return;
+    try {
+      await openPath(curationResult.output_dir);
+    } catch (e) {
+      curationError = `Couldn't open: ${e}`;
     }
   }
 
@@ -273,6 +319,15 @@
       {/if}
       <button
         type="button"
+        class="curate-btn"
+        onclick={curateBestSources}
+        disabled={curating || versions.length === 0}
+        title="Merge every version's source catalog into one curated best-of set under exports/best-of-sources/"
+      >
+        {curating ? '⏳ Curating…' : '✨ Curate Best Sources'}
+      </button>
+      <button
+        type="button"
         class="finder-btn"
         onclick={revealOutputDir}
         disabled={!outputDir}
@@ -307,6 +362,40 @@
   {:else if !selectedVersion}
     <div class="empty">Pick a version above.</div>
   {:else}
+    {#if curationResult}
+      <div class="curation-banner success">
+        <div class="curation-summary">
+          <strong>✨ {curationResult.total_unique_sources} unique sources</strong>
+          (collapsed from {curationResult.total_section_entries} per-section entries)
+          across {curationResult.sections.length} sections, from
+          {curationResult.versions_scanned.length} versions. See
+          <code>Master-Sources.md</code> for the headline list. Validity not yet
+          checked — soft-404s and paywall stubs may still be present.
+        </div>
+        <div class="curation-actions">
+          <button type="button" class="finder-btn" onclick={revealCurationDir}>
+            📁 Open best-of-sources/
+          </button>
+          <button
+            type="button"
+            class="banner-dismiss"
+            onclick={() => (curationResult = null)}
+            aria-label="Dismiss"
+          >×</button>
+        </div>
+      </div>
+    {/if}
+    {#if curationError}
+      <div class="curation-banner error">
+        <span>{curationError}</span>
+        <button
+          type="button"
+          class="banner-dismiss"
+          onclick={() => (curationError = null)}
+          aria-label="Dismiss"
+        >×</button>
+      </div>
+    {/if}
     <div class="content">
       <header class="content-head">
         <span class="version-badge">{selectedVersion}</span>
@@ -462,6 +551,78 @@
   .finder-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .curate-btn {
+    background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
+    color: white;
+    border: 1px solid transparent;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .curate-btn:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+
+  .curate-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .curation-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.7rem 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.85rem;
+    font-size: 0.88rem;
+    flex-shrink: 0;
+  }
+
+  .curation-banner.success {
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    color: #4c1d95;
+  }
+
+  .curation-banner.error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+
+  .curation-summary {
+    flex: 1;
+    line-height: 1.4;
+  }
+
+  .curation-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .banner-dismiss {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+
+  .banner-dismiss:hover {
+    opacity: 1;
   }
 
   .notebook-btn {
@@ -712,6 +873,16 @@
     }
     .file-name {
       color: #f6f6f6;
+    }
+    .curation-banner.success {
+      background: #2a1f3d;
+      border-color: #5b21b6;
+      color: #ddd6fe;
+    }
+    .curation-banner.error {
+      background: #3f1d1d;
+      border-color: #7f1d1d;
+      color: #fecaca;
     }
   }
 </style>
