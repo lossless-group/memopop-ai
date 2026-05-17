@@ -5,7 +5,7 @@
   import { openPath } from '@tauri-apps/plugin-opener';
   import { settings } from '$lib/stores/settings.svelte';
   import { getTransport } from '$lib/transport';
-  import { openWithPreferred } from '$lib/openers';
+  import { openWithPreferred, revealInVaultOrFinder } from '$lib/openers';
 
   interface Props {
     firm: string;
@@ -128,7 +128,7 @@
   async function openFirmInNotebook() {
     if (!firmDir) return;
     try {
-      await openWithPreferred(firmDir, { isDir: true });
+      await revealInVaultOrFinder(firmDir);
     } catch (e) {
       loadError = `Couldn't open firm in notebook: ${e}`;
     }
@@ -162,9 +162,12 @@
   async function revealCurationDir() {
     if (!curationResult?.output_dir) return;
     try {
-      await openPath(curationResult.output_dir);
+      await revealInVaultOrFinder(curationResult.output_dir, {
+        preferFileInDir: 'Master-Sources.md',
+      });
     } catch (e) {
-      curationError = `Couldn't open: ${e}`;
+      console.error('revealCurationDir failed', e);
+      curationError = `Couldn't open ${curationResult.output_dir}: ${e}`;
     }
   }
 
@@ -173,7 +176,7 @@
   async function openVersionInNotebook() {
     if (!outputDir) return;
     try {
-      await openWithPreferred(outputDir, { isDir: true });
+      await revealInVaultOrFinder(outputDir);
     } catch (e) {
       loadError = `Couldn't open version in notebook: ${e}`;
     }
@@ -291,15 +294,24 @@
 
 <section class="page">
   <header class="head">
-    <button type="button" class="back" onclick={() => goto('/')}>← Home</button>
-    <div class="title-block">
-      <h1>{deal}</h1>
-      <p class="subtitle">
-        <code>{firm}</code>
-        {#if versions.length > 0}
-          · {versions.length} {versions.length === 1 ? 'version' : 'versions'}
-        {/if}
-      </p>
+    <div class="head-lead">
+      <button
+        type="button"
+        class="back-icon"
+        onclick={() => goto('/')}
+        aria-label="Back to deals"
+        title="Back to deals"
+      >←</button>
+      <div class="title-block">
+        <h1>{deal}</h1>
+        <p class="subtitle">
+          <code>{firm}</code>
+          {#if versions.length > 0}
+            <span class="sep" aria-hidden="true">·</span>
+            <span>{versions.length} {versions.length === 1 ? 'version' : 'versions'}</span>
+          {/if}
+        </p>
+      </div>
     </div>
 
     <div class="head-actions">
@@ -309,6 +321,7 @@
           value={selectedVersion ?? ''}
           onchange={(e) => selectVersion((e.currentTarget as HTMLSelectElement).value)}
           disabled={loading}
+          aria-label="Select version"
         >
           {#each versions as v (v.name)}
             <option value={v.name}>
@@ -324,29 +337,37 @@
         disabled={curating || versions.length === 0}
         title="Merge every version's source catalog into one curated best-of set under exports/best-of-sources/"
       >
-        {curating ? '⏳ Curating…' : '✨ Curate Best Sources'}
+        {#if curating}
+          <span class="curate-spinner" aria-hidden="true">⏳</span> Curating…
+        {:else}
+          <span aria-hidden="true">✨</span> Curate Best Sources
+        {/if}
       </button>
-      <button
-        type="button"
-        class="finder-btn"
-        onclick={revealOutputDir}
-        disabled={!outputDir}
-        title="Reveal this version's folder in Finder"
-      >
-        📁 Open in Finder
-      </button>
-      {#if settings.markdownNotebook}
-        {@const notebookName = (settings.markdownNotebook.split('/').pop() ?? '').replace(/\.app$/, '')}
+      <div class="icon-group" role="group" aria-label="Open this deal">
         <button
           type="button"
-          class="notebook-btn"
-          onclick={openFirmInNotebook}
-          disabled={!firmDir}
-          title="Open the entire {firm} firm folder as a {notebookName} vault — gives you cross-deal links, shared notes, brand configs, all in one knowledge graph."
+          class="icon-btn"
+          onclick={revealOutputDir}
+          disabled={!outputDir}
+          aria-label="Reveal in Finder"
+          title="Reveal this version's folder in Finder"
         >
-          📓 Open in {notebookName}
+          <span aria-hidden="true">📁</span>
         </button>
-      {/if}
+        {#if settings.markdownNotebook}
+          {@const notebookName = (settings.markdownNotebook.split('/').pop() ?? '').replace(/\.app$/, '')}
+          <button
+            type="button"
+            class="icon-btn icon-btn--accent"
+            onclick={openFirmInNotebook}
+            disabled={!firmDir}
+            aria-label="Open in {notebookName}"
+            title="Open the entire {firm} firm folder as a {notebookName} vault — cross-deal links, shared notes, brand configs, one knowledge graph."
+          >
+            <span aria-hidden="true">📓</span>
+          </button>
+        {/if}
+      </div>
     </div>
   </header>
 
@@ -373,8 +394,8 @@
           checked — soft-404s and paywall stubs may still be present.
         </div>
         <div class="curation-actions">
-          <button type="button" class="finder-btn" onclick={revealCurationDir}>
-            📁 Open best-of-sources/
+          <button type="button" class="banner-action" onclick={revealCurationDir}>
+            <span aria-hidden="true">📁</span> Open best-of-sources/
           </button>
           <button
             type="button"
@@ -467,111 +488,202 @@
   }
 
   .head {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 1rem;
-    padding: 0 0.25rem 1.25rem;
-    border-bottom: 1px solid #e5e7eb;
+    --ctl-height: 32px;
+    --ctl-radius: 8px;
+    --ctl-border: rgba(148, 163, 184, 0.25);
+    --ctl-border-hover: rgba(148, 163, 184, 0.5);
+    --ctl-bg: rgba(148, 163, 184, 0.08);
+    --ctl-bg-hover: rgba(148, 163, 184, 0.16);
+    --ctl-fg: inherit;
+    --ctl-fg-muted: #6b7280;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.25rem;
+    padding: 0 0.25rem 0.85rem;
+    border-bottom: 1px solid var(--ctl-border);
     margin-bottom: 1rem;
     flex-shrink: 0;
   }
 
-  .back {
-    background: transparent;
-    border: 1px solid #d1d5db;
-    color: #4b5563;
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
+  .head-lead {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
   }
 
-  .back:hover {
-    background: #f3f4f6;
-    color: #0f0f0f;
+  .back-icon {
+    width: var(--ctl-height);
+    height: var(--ctl-height);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--ctl-border);
+    border-radius: var(--ctl-radius);
+    color: var(--ctl-fg-muted);
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+
+  .back-icon:hover {
+    background: var(--ctl-bg-hover);
+    color: var(--ctl-fg);
+    border-color: var(--ctl-border-hover);
+  }
+
+  .title-block {
+    min-width: 0;
   }
 
   .title-block h1 {
-    margin: 0 0 0.2rem;
-    font-size: 1.4rem;
+    margin: 0;
+    font-size: 1.25rem;
     font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .subtitle {
-    margin: 0;
-    color: #6b7280;
-    font-size: 0.85rem;
+    margin: 0.15rem 0 0;
+    color: var(--ctl-fg-muted);
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
   }
 
   .subtitle code {
     font-family: ui-monospace, SFMono-Regular, monospace;
-    color: #5b21b6;
-    background: #f5f3ff;
-    padding: 0.05rem 0.3rem;
-    border-radius: 3px;
+    color: #c4b5fd;
+    background: rgba(124, 58, 237, 0.15);
+    padding: 0.05rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+  }
+
+  .subtitle .sep {
+    opacity: 0.5;
   }
 
   .head-actions {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 0.5rem;
+    flex-shrink: 0;
   }
 
   .version-select {
-    padding: 0.4rem 0.6rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: white;
+    height: var(--ctl-height);
+    padding: 0 1.6rem 0 0.65rem;
+    border: 1px solid var(--ctl-border);
+    border-radius: var(--ctl-radius);
+    background: var(--ctl-bg);
+    color: var(--ctl-fg);
     font: inherit;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    transition: border-color 120ms ease, background-color 120ms ease;
   }
 
-  .finder-btn {
-    background: transparent;
-    border: 1px solid #d1d5db;
-    color: #4b5563;
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .finder-btn:hover:not(:disabled) {
-    background: #f3f4f6;
-    color: #0f0f0f;
-  }
-
-  .finder-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .version-select:hover:not(:disabled) {
+    border-color: var(--ctl-border-hover);
   }
 
   .curate-btn {
+    height: var(--ctl-height);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
     color: white;
     border: 1px solid transparent;
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
+    padding: 0 0.85rem;
+    border-radius: var(--ctl-radius);
     font: inherit;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     font-weight: 600;
     cursor: pointer;
+    white-space: nowrap;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1), 0 6px 16px -8px rgba(124, 58, 237, 0.55);
+    transition: filter 120ms ease, transform 120ms ease;
   }
 
   .curate-btn:hover:not(:disabled) {
     filter: brightness(1.08);
   }
 
+  .curate-btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
   .curate-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .curate-spinner {
+    display: inline-block;
+    animation: spin 1.2s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .icon-group {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--ctl-border);
+    border-radius: var(--ctl-radius);
+    background: var(--ctl-bg);
+    overflow: hidden;
+  }
+
+  .icon-btn {
+    width: var(--ctl-height);
+    height: var(--ctl-height);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--ctl-fg);
+    font: inherit;
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+
+  .icon-btn + .icon-btn {
+    border-left: 1px solid var(--ctl-border);
+  }
+
+  .icon-btn:hover:not(:disabled) {
+    background: var(--ctl-bg-hover);
+  }
+
+  .icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .icon-btn--accent:hover:not(:disabled) {
+    background: rgba(124, 58, 237, 0.2);
   }
 
   .curation-banner {
@@ -625,27 +737,26 @@
     opacity: 1;
   }
 
-  .notebook-btn {
-    background: #5b21b6;
-    color: white;
-    border: 1px solid #5b21b6;
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
+  .banner-action {
+    height: 30px;
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    border: 1px solid currentColor;
+    border-color: rgba(255, 255, 255, 0.15);
+    padding: 0 0.7rem;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 120ms ease;
   }
 
-  .notebook-btn:hover:not(:disabled) {
-    background: #4c1d95;
-  }
-
-  .notebook-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .banner-action:hover {
+    background: rgba(255, 255, 255, 0.16);
   }
 
   .empty {
@@ -801,32 +912,7 @@
   }
 
   @media (prefers-color-scheme: dark) {
-    .head {
-      border-bottom-color: #2a2a2c;
-    }
-    .back,
-    .finder-btn {
-      border-color: #3a3a3c;
-      color: #d1d5db;
-    }
-    .back:hover,
-    .finder-btn:hover:not(:disabled) {
-      background: #2a2a2c;
-      color: #f6f6f6;
-    }
     .title-block h1 {
-      color: #f6f6f6;
-    }
-    .subtitle {
-      color: #9ca3af;
-    }
-    .subtitle code {
-      background: #2a1f3d;
-      color: #c4b5fd;
-    }
-    .version-select {
-      background: #1c1c1e;
-      border-color: #3a3a3c;
       color: #f6f6f6;
     }
     .empty {

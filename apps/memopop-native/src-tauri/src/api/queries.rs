@@ -27,6 +27,43 @@ pub fn default_orchestrator_path() -> Option<String> {
     }
 }
 
+/// Walk up from `path` looking for a `.obsidian/` directory, the marker
+/// of an Obsidian vault root. Returns `{vault_root, vault_name, rel_path}`
+/// where `rel_path` is `path` relative to `vault_root` (POSIX-style, may be
+/// empty if `path` is the vault root itself), or `null` if no vault was found.
+///
+/// `open -a Obsidian <arbitrary-folder>` silently no-ops when the folder
+/// isn't a vault — the callers need to know whether to invoke the
+/// `obsidian://open?vault=…&file=…` URI or fall back to Finder.
+pub fn find_obsidian_vault(path: &str) -> Value {
+    let target = Path::new(path);
+    let mut cursor = if target.is_file() {
+        target.parent().map(|p| p.to_path_buf())
+    } else {
+        Some(target.to_path_buf())
+    };
+    while let Some(dir) = cursor {
+        if dir.join(".obsidian").is_dir() {
+            let vault_name = dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let rel_path = target
+                .strip_prefix(&dir)
+                .ok()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+            return json!({
+                "vault_root": dir.to_string_lossy(),
+                "vault_name": vault_name,
+                "rel_path": rel_path,
+            });
+        }
+        cursor = dir.parent().map(|p| p.to_path_buf());
+    }
+    Value::Null
+}
+
 pub async fn list_firms(repo_path: &str) -> Result<Value, ApiError> {
     let io_dir = Path::new(repo_path).join("io");
     if !io_dir.is_dir() {

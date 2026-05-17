@@ -9,8 +9,9 @@
  * the OS default handler (the same behavior as plain openPath).
  */
 
-import { openPath } from '@tauri-apps/plugin-opener';
+import { openPath, openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { settings } from '$lib/stores/settings.svelte';
+import { getTransport } from '$lib/transport';
 
 const MARKDOWN_EXTENSIONS = ['md', 'mdx', 'markdown'];
 
@@ -46,4 +47,46 @@ export async function openWithPreferred(
 
   // openPath's second param is optional; passing undefined uses the OS default.
   await openPath(path, withApp);
+}
+
+interface ObsidianVaultInfo {
+  vault_root: string;
+  vault_name: string;
+  /** POSIX-style path relative to vault root. May be empty if `path` is the vault root. */
+  rel_path: string;
+}
+
+/**
+ * Reveal an absolute path in its enclosing Obsidian vault when one exists,
+ * otherwise fall back to revealing the item in Finder.
+ *
+ * `open -a Obsidian <arbitrary-folder>` silently no-ops for non-vault
+ * folders, which is why we have to detect the vault and use the
+ * `obsidian://open?vault=…&file=…` URI scheme instead. `?file=` accepts a
+ * note path; for folders, opening the vault alone is the best we can do
+ * since the URI scheme has no "reveal folder" verb. Callers with a known
+ * headline file inside a target folder can pass `preferFileInDir` to land
+ * the user on something useful.
+ */
+export async function revealInVaultOrFinder(
+  absPath: string,
+  opts: { preferFileInDir?: string } = {}
+): Promise<void> {
+  const vault = await getTransport().request<ObsidianVaultInfo | null>(
+    'GET',
+    '/local/obsidian-vault',
+    { path: absPath }
+  );
+
+  if (vault && vault.vault_name) {
+    const fileRel = opts.preferFileInDir
+      ? (vault.rel_path ? `${vault.rel_path}/${opts.preferFileInDir}` : opts.preferFileInDir)
+      : vault.rel_path;
+    const params = new URLSearchParams({ vault: vault.vault_name });
+    if (fileRel) params.set('file', fileRel);
+    await openUrl(`obsidian://open?${params.toString()}`);
+    return;
+  }
+
+  await revealItemInDir(absPath);
 }

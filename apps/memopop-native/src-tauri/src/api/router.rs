@@ -87,6 +87,15 @@ pub async fn api_dispatch(
             Ok(serde_json::json!({ "path": queries::default_orchestrator_path() }))
         }
 
+        // Walk up from a path to find the enclosing Obsidian vault, so the
+        // frontend can build an `obsidian://open?vault=…&file=…` URI rather
+        // than `open -a Obsidian <folder>` (which silently no-ops for
+        // non-vault folders).
+        ("GET", "/local/obsidian-vault") => {
+            let path = require_string(&body, "path")?;
+            Ok(queries::find_obsidian_vault(path))
+        }
+
         ("GET", p) if p.starts_with("/outlines/") => {
             let repo_path = require_string(&body, "repoPath")?;
             let id = p.trim_start_matches("/outlines/");
