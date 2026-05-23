@@ -50,6 +50,18 @@ pub async fn api_dispatch(
             queries::list_versions(repo_path, firm, deal).await
         }
 
+        // GET /firms/{firm}/deals/{deal}/config — forwarded to the sidecar.
+        // Returns the parsed deal config (inputs/deal.json OR {deal}/{deal}.json),
+        // used by DealWorkspace's "Run MemoPop" button to replay all on-disk
+        // fields back into POST /memos with full fidelity.
+        ("GET", p)
+            if p.starts_with("/firms/")
+                && p.contains("/deals/")
+                && p.ends_with("/config") =>
+        {
+            forward_to_sidecar(&app, &body, &method, p).await
+        }
+
         // GET /firms/{firm}/deals/{deal}/versions/{version}/files — flat list
         // of files (relative paths + sizes) under one version's output_dir.
         ("GET", p)
@@ -133,6 +145,14 @@ pub async fn api_dispatch(
         // Cross-version source-catalog merge. Parses every version's
         // 3-source-catalog/, dedupes per section, writes exports/best-of-sources/.
         ("POST", "/actions/curate-sources") => {
+            forward_to_sidecar(&app, &body, &method, &path).await
+        }
+
+        // Render a memo version to branded HTML (and optionally PDF). Shells
+        // out to cli/export_branded.py inside the sidecar. Writes to
+        // io/{firm}/deals/{deal}/exports/{mode}/. Synchronous — the script
+        // completes in seconds for a typical memo.
+        ("POST", "/actions/export-memo") => {
             forward_to_sidecar(&app, &body, &method, &path).await
         }
 

@@ -4,8 +4,11 @@
   import { page } from '$app/state';
   import { openPath } from '@tauri-apps/plugin-opener';
   import { settings } from '$lib/stores/settings.svelte';
+  import { outlines } from '$lib/stores/outlines.svelte';
+  import { flow } from '$lib/stores/flow.svelte';
   import { getTransport } from '$lib/transport';
   import { openWithPreferred, revealInVaultOrFinder } from '$lib/openers';
+  import type { Outline } from '$lib/types';
 
   interface Props {
     firm: string;
@@ -46,9 +49,76 @@
   let curationResult = $state<CurationResult | null>(null);
   let curationError = $state<string | null>(null);
 
+  // Deal config (the on-disk deal.json or {deal}.json). Loaded once on mount;
+  // used by the "Run MemoPop" action to replay all fields to /memos with full
+  // fidelity instead of running with bare defaults.
+  interface DealConfig {
+    type?: 'direct' | 'fund';
+    mode?: 'consider' | 'justify';
+    outline?: string;
+    scorecard?: string;
+    url?: string;
+    description?: string;
+    stage?: string;
+    notes?: string;
+    deck?: string;
+    dataroom?: string;
+    trademark_light?: string;
+    trademark_dark?: string;
+  }
+  let dealConfig = $state<DealConfig | null>(null);
+  let dealConfigError = $state<string | null>(null);
+  let running = $state(false);
+  let runError = $state<string | null>(null);
+  // Resume is for the "ran-and-died-mid-flight" case: app crashed, laptop slept,
+  // sidecar killed. The orchestrator's resume CLI walks the latest output_dir
+  // for checkpoints and picks up from the last completed phase. We always offer
+  // the button when versions exist; the backend gracefully refuses if there's
+  // nothing to resume ("No resumable checkpoints found — start a fresh run").
+  let resuming = $state(false);
+  let resumeError = $state<string | null>(null);
+
+  // Export: branded HTML + PDF via cli/export_branded.py. Targets the currently
+  // selected version (not necessarily the latest). Default mode is dark, which
+  // matches the script default and is what most VC memos ship as.
+  interface ExportResult {
+    exports_dir: string;
+    html_path: string | null;
+    pdf_path: string | null;
+    mode: 'light' | 'dark';
+    version: string | null;
+  }
+  let exporting = $state(false);
+  let exportError = $state<string | null>(null);
+  let exportResult = $state<ExportResult | null>(null);
+  let exportMode = $state<'light' | 'dark'>('dark');
+
+  // Editable overrides for this run. Initialized from the on-disk deal config
+  // the moment it loads, then the user can change them before clicking Run.
+  // We deliberately don't write back to disk — this is per-run intent, not a
+  // config edit. (For permanent changes, edit the deal's JSON directly.)
+  let selectedOutlineId = $state<string | null>(null);
+  let selectedMode = $state<'consider' | 'justify'>('consider');
+
+  // Restrict the outline dropdown to outlines compatible with this deal's
+  // investment type — picking a fund-commitment outline for a direct deal
+  // would silently produce a broken memo. The outline_type field is the
+  // discriminator emitted by the sidecar's /outlines endpoint.
+  let compatibleOutlines = $derived.by(() => {
+    const wantFund = dealConfig?.type === 'fund';
+    return outlines.outlines.filter((o) =>
+      wantFund ? o.outline_type === 'fund_commitment' : o.outline_type !== 'fund_commitment'
+    );
+  });
+
   // Initial load: pull versions, then fetch the most recent (or ?v= override).
+  // Also kick off (in parallel) the deal-config + outlines fetches the "Run
+  // MemoPop" button needs — we want the button enabled by the time the page
+  // settles, not after the user clicks it.
   onMount(async () => {
     if (!settings.repoPath) return;
+    void loadDealConfig();
+    void outlines.load(settings.repoPath);
     await loadVersions();
     const requested = page.url.searchParams.get('v');
     if (requested && versions.some((v) => v.name === requested)) {
@@ -61,6 +131,204 @@
     }
     loading = false;
   });
+
+  async function loadDealConfig() {
+    try {
+      const result = await getTransport().request<{ config: DealConfig }>(
+        'GET',
+        `/firms/${encodeURIComponent(firm)}/deals/${encodeURIComponent(deal)}/config`,
+        { repoPath: settings.repoPath }
+      );
+      dealConfig = result.config;
+      // Seed the editable overrides from disk. The user can still change
+      // either before they click Run; we only persist on disk if they edit
+      // the JSON directly.
+      selectedOutlineId = result.config.outline ?? null;
+      selectedMode = result.config.mode === 'justify' ? 'justify' : 'consider';
+    } catch (e) {
+      // Don't surface as a fatal page error — the workspace still works for
+      // browsing artifacts even if the deal config is missing. Only the Run
+      // button cares, and it'll show its own message when clicked.
+      dealConfigError =
+        (e as { message?: string })?.message ?? 'Failed to load deal config';
+    }
+  }
+
+  // The /memos POST needs an outline_name; flow.markRunning needs the full
+  // Outline object for JobView's header. Resolve it from the outlines store
+  // (loaded on mount) by id-match. Falls back to a synthesized stub if not
+  // found so the run still proceeds — JobView degrades gracefully.
+  function findOutline(id: string | undefined) {
+    if (!id) return null;
+    return outlines.outlines.find((o) => o.id === id) ?? null;
+  }
+
+  async function runMemoPop() {
+    if (running) return;
+    runError = null;
+    if (!settings.repoPath) {
+      runError = 'Orchestrator path not set. Open Settings to anchor the repo.';
+      return;
+    }
+    if (!dealConfig) {
+      runError =
+        dealConfigError ??
+        'Deal config not loaded yet — give it a moment, then try again.';
+      return;
+    }
+    const outlineId = selectedOutlineId ?? dealConfig.outline;
+    const outline = findOutline(outlineId);
+    if (!outline) {
+      runError = outlineId
+        ? `Outline "${outlineId}" not found in this firm's outlines.`
+        : 'Pick an outline before running.';
+      return;
+    }
+    const investmentType =
+      dealConfig.type === 'fund' ? 'fund' : 'direct';
+    const mode: 'consider' | 'justify' = selectedMode;
+
+    running = true;
+    try {
+      const result = await getTransport().request<{ job_id: string; status: string }>(
+        'POST',
+        '/memos',
+        {
+          repoPath: settings.repoPath,
+          company_name: deal,
+          firm,
+          company_url: dealConfig.url || undefined,
+          company_description: dealConfig.description || undefined,
+          company_stage: dealConfig.stage || undefined,
+          research_notes: dealConfig.notes || undefined,
+          investment_type: investmentType,
+          memo_mode: mode,
+          deck_path: dealConfig.deck || undefined,
+          dataroom_path: dealConfig.dataroom || undefined,
+          company_trademark_light: dealConfig.trademark_light || undefined,
+          company_trademark_dark: dealConfig.trademark_dark || undefined,
+          outline_name: outline.id,
+          scorecard_name: dealConfig.scorecard || undefined,
+        }
+      );
+      // Hand off to the same JobView path the onboarding flow uses — root
+      // +page.svelte renders JobView whenever flow.stage.kind === 'running_job'.
+      flow.markRunning(
+        outline,
+        {
+          companyUrl: dealConfig.url ?? '',
+          companyName: deal,
+          deckPath: dealConfig.deck ?? null,
+          mode,
+        },
+        result.job_id
+      );
+      await goto('/');
+    } catch (e) {
+      runError =
+        (e as { message?: string })?.message ?? 'Failed to start memo generation';
+    } finally {
+      running = false;
+    }
+  }
+
+  async function exportMemo() {
+    if (exporting) return;
+    exportError = null;
+    exportResult = null;
+    if (!settings.repoPath) {
+      exportError = 'Orchestrator path not set. Open Settings to anchor the repo.';
+      return;
+    }
+    if (!selectedVersion) {
+      exportError = 'Pick a version first.';
+      return;
+    }
+    exporting = true;
+    try {
+      exportResult = await getTransport().request<ExportResult>(
+        'POST',
+        '/actions/export-memo',
+        {
+          repoPath: settings.repoPath,
+          firm,
+          deal,
+          version: selectedVersion,
+          mode: exportMode,
+          pdf: true,
+        }
+      );
+    } catch (e) {
+      exportError = (e as { message?: string })?.message ?? 'Export failed';
+    } finally {
+      exporting = false;
+    }
+  }
+
+  async function revealExportFile(path: string | null) {
+    if (!path) return;
+    try {
+      await openPath(path);
+    } catch (e) {
+      exportError = `Couldn't open ${path}: ${e}`;
+    }
+  }
+
+  async function resumeLatest() {
+    if (resuming) return;
+    resumeError = null;
+    if (!settings.repoPath) {
+      resumeError = 'Orchestrator path not set. Open Settings to anchor the repo.';
+      return;
+    }
+    // Outline is needed for JobView's header; resume itself doesn't need it
+    // server-side (the checkpoint reconstruction reads the deal config from
+    // disk). Fall back to a synthesized stub so resume still works even if
+    // outlines store hasn't loaded yet.
+    const outlineId = selectedOutlineId ?? dealConfig?.outline;
+    const outline =
+      findOutline(outlineId) ??
+      ({
+        id: outlineId ?? 'unknown',
+        title: outlineId ?? 'Resumed run',
+        outline_type: dealConfig?.type === 'fund' ? 'fund_commitment' : 'direct_investment',
+        type_label: '',
+        description: '',
+        section_count: 0,
+        compatible_modes: [],
+        firm: null,
+        version: null,
+      } as Outline);
+
+    resuming = true;
+    try {
+      const result = await getTransport().request<{ job_id: string; status: string }>(
+        'POST',
+        '/memos/resume',
+        {
+          repoPath: settings.repoPath,
+          firm,
+          company_name: deal,
+        }
+      );
+      flow.markRunning(
+        outline,
+        {
+          companyUrl: dealConfig?.url ?? '',
+          companyName: deal,
+          deckPath: dealConfig?.deck ?? null,
+          mode: selectedMode,
+        },
+        result.job_id
+      );
+      await goto('/');
+    } catch (e) {
+      resumeError =
+        (e as { message?: string })?.message ?? 'Failed to start resume';
+    } finally {
+      resuming = false;
+    }
+  }
 
   async function loadVersions() {
     try {
@@ -332,6 +600,63 @@
       {/if}
       <button
         type="button"
+        class="run-btn"
+        onclick={runMemoPop}
+        disabled={running || resuming || !dealConfig}
+        title={dealConfig
+          ? `Run MemoPop on ${deal} using the on-disk deal config (outline: ${dealConfig.outline ?? 'unset'})`
+          : 'Loading deal config…'}
+      >
+        {#if running}
+          <span class="curate-spinner" aria-hidden="true">⏳</span> Starting…
+        {:else}
+          <span aria-hidden="true">▶</span> Run MemoPop
+        {/if}
+      </button>
+      {#if versions.length > 0}
+        <button
+          type="button"
+          class="resume-btn"
+          onclick={resumeLatest}
+          disabled={resuming || running}
+          title="Resume the latest run from its last on-disk checkpoint. Useful when the laptop slept or the sidecar died mid-run."
+        >
+          {#if resuming}
+            <span class="curate-spinner" aria-hidden="true">⏳</span> Resuming…
+          {:else}
+            <span aria-hidden="true">↻</span> Resume latest
+          {/if}
+        </button>
+      {/if}
+      {#if versions.length > 0}
+        <div class="export-group" role="group" aria-label="Export memo">
+          <select
+            class="export-mode"
+            bind:value={exportMode}
+            disabled={exporting}
+            aria-label="Export mode"
+            title="Light or dark theme for the exported memo"
+          >
+            <option value="dark">dark</option>
+            <option value="light">light</option>
+          </select>
+          <button
+            type="button"
+            class="export-btn"
+            onclick={exportMemo}
+            disabled={exporting || !selectedVersion}
+            title="Render the selected version to branded HTML + PDF under exports/{exportMode}/"
+          >
+            {#if exporting}
+              <span class="curate-spinner" aria-hidden="true">⏳</span> Exporting…
+            {:else}
+              <span aria-hidden="true">📤</span> Export HTML + PDF
+            {/if}
+          </button>
+        </div>
+      {/if}
+      <button
+        type="button"
         class="curate-btn"
         onclick={curateBestSources}
         disabled={curating || versions.length === 0}
@@ -379,6 +704,65 @@
     <div class="empty">
       <strong>No runs yet for {deal}.</strong>
       <p class="hint">Generate a memo from this deal's outline to see artifacts here.</p>
+      <div class="empty-cta">
+        <button
+          type="button"
+          class="run-btn run-btn--large"
+          onclick={runMemoPop}
+          disabled={running || !dealConfig}
+          title={dealConfig
+            ? `Run MemoPop on ${deal} using the on-disk deal config`
+            : 'Loading deal config…'}
+        >
+          {#if running}
+            <span class="curate-spinner" aria-hidden="true">⏳</span> Starting…
+          {:else}
+            <span aria-hidden="true">▶</span> Run MemoPop on {deal}
+          {/if}
+        </button>
+        {#if dealConfig}
+          <div class="empty-controls">
+            <label class="empty-control">
+              <span>Outline</span>
+              <select
+                bind:value={selectedOutlineId}
+                disabled={running || outlines.loading || compatibleOutlines.length === 0}
+                aria-label="Outline"
+              >
+                {#if selectedOutlineId && !compatibleOutlines.some((o) => o.id === selectedOutlineId)}
+                  <option value={selectedOutlineId}>{selectedOutlineId} (not in this firm)</option>
+                {/if}
+                {#each compatibleOutlines as o (o.id)}
+                  <option value={o.id}>{o.id}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="empty-control">
+              <span>Mode</span>
+              <select
+                bind:value={selectedMode}
+                disabled={running}
+                aria-label="Mode"
+              >
+                <option value="consider">consider</option>
+                <option value="justify">justify</option>
+              </select>
+            </label>
+            {#if dealConfig.deck}
+              <div class="empty-control deck-readonly">
+                <span>Deck</span>
+                <code>{(dealConfig.deck.split('/').pop()) ?? dealConfig.deck}</code>
+              </div>
+            {/if}
+          </div>
+        {/if}
+        {#if runError}
+          <p class="empty-error">{runError}</p>
+        {/if}
+        {#if dealConfigError}
+          <p class="empty-error">Deal config: {dealConfigError}</p>
+        {/if}
+      </div>
     </div>
   {:else if !selectedVersion}
     <div class="empty">Pick a version above.</div>
@@ -413,6 +797,86 @@
           type="button"
           class="banner-dismiss"
           onclick={() => (curationError = null)}
+          aria-label="Dismiss"
+        >×</button>
+      </div>
+    {/if}
+    {#if runError}
+      <div class="curation-banner error">
+        <span>Run MemoPop: {runError}</span>
+        <button
+          type="button"
+          class="banner-dismiss"
+          onclick={() => (runError = null)}
+          aria-label="Dismiss"
+        >×</button>
+      </div>
+    {/if}
+    {#if resumeError}
+      <div class="curation-banner error">
+        <span>Resume: {resumeError}</span>
+        <button
+          type="button"
+          class="banner-dismiss"
+          onclick={() => (resumeError = null)}
+          aria-label="Dismiss"
+        >×</button>
+      </div>
+    {/if}
+    {#if exportResult}
+      <div class="curation-banner success">
+        <div class="curation-summary">
+          <strong>📤 Exported {exportResult.version ?? ''} ({exportResult.mode})</strong> —
+          {#if exportResult.pdf_path && exportResult.html_path}
+            HTML + PDF written to <code>exports/{exportResult.mode}/</code>.
+          {:else if exportResult.html_path}
+            HTML written to <code>exports/{exportResult.mode}/</code> (PDF failed — check brand config / WeasyPrint deps).
+          {:else}
+            See <code>exports/{exportResult.mode}/</code> for output.
+          {/if}
+        </div>
+        <div class="curation-actions">
+          {#if exportResult.pdf_path}
+            <button
+              type="button"
+              class="banner-action"
+              onclick={() => revealExportFile(exportResult?.pdf_path ?? null)}
+            >
+              <span aria-hidden="true">📄</span> Open PDF
+            </button>
+          {/if}
+          {#if exportResult.html_path}
+            <button
+              type="button"
+              class="banner-action"
+              onclick={() => revealExportFile(exportResult?.html_path ?? null)}
+            >
+              <span aria-hidden="true">🌐</span> Open HTML
+            </button>
+          {/if}
+          <button
+            type="button"
+            class="banner-action"
+            onclick={() => revealExportFile(exportResult?.exports_dir ?? null)}
+          >
+            <span aria-hidden="true">📁</span> Folder
+          </button>
+          <button
+            type="button"
+            class="banner-dismiss"
+            onclick={() => (exportResult = null)}
+            aria-label="Dismiss"
+          >×</button>
+        </div>
+      </div>
+    {/if}
+    {#if exportError}
+      <div class="curation-banner error">
+        <span>Export: {exportError}</span>
+        <button
+          type="button"
+          class="banner-dismiss"
+          onclick={() => (exportError = null)}
           aria-label="Dismiss"
         >×</button>
       </div>
@@ -619,6 +1083,216 @@
     white-space: nowrap;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1), 0 6px 16px -8px rgba(124, 58, 237, 0.55);
     transition: filter 120ms ease, transform 120ms ease;
+  }
+
+  .run-btn {
+    height: var(--ctl-height);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: linear-gradient(135deg, #16a34a 0%, #0891b2 100%);
+    color: white;
+    border: 1px solid transparent;
+    padding: 0 0.85rem;
+    border-radius: var(--ctl-radius);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1), 0 6px 16px -8px rgba(22, 163, 74, 0.5);
+    transition: filter 120ms ease, transform 120ms ease;
+  }
+
+  .run-btn:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+
+  .run-btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  .run-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .run-btn--large {
+    height: 44px;
+    padding: 0 1.4rem;
+    font-size: 0.95rem;
+  }
+
+  .export-group {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--ctl-border);
+    border-radius: var(--ctl-radius);
+    background: var(--ctl-bg);
+    overflow: hidden;
+    height: var(--ctl-height);
+  }
+
+  .export-mode {
+    height: 100%;
+    border: none;
+    border-right: 1px solid var(--ctl-border);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.78rem;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    padding: 0 1.4rem 0 0.55rem;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.45rem center;
+  }
+
+  .export-mode:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .export-btn {
+    height: 100%;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 500;
+    padding: 0 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 120ms ease;
+  }
+
+  .export-btn:hover:not(:disabled) {
+    background: var(--ctl-bg-hover);
+  }
+
+  .export-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .resume-btn {
+    height: var(--ctl-height);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(148, 163, 184, 0.12);
+    color: inherit;
+    border: 1px solid var(--ctl-border);
+    padding: 0 0.75rem;
+    border-radius: var(--ctl-radius);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+
+  .resume-btn:hover:not(:disabled) {
+    background: rgba(148, 163, 184, 0.22);
+    border-color: var(--ctl-border-hover);
+  }
+
+  .resume-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .empty-cta {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .empty-meta {
+    font-size: 0.78rem;
+    color: #9ca3af;
+    margin: 0;
+  }
+
+  .empty-meta code {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    background: rgba(148, 163, 184, 0.12);
+    padding: 0.05rem 0.4rem;
+    border-radius: 4px;
+    color: inherit;
+  }
+
+  .empty-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .empty-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: #9ca3af;
+  }
+
+  .empty-control select {
+    height: 30px;
+    padding: 0 1.6rem 0 0.55rem;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 6px;
+    background-color: rgba(148, 163, 184, 0.08);
+    color: inherit;
+    font: inherit;
+    font-size: 0.78rem;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+
+  .empty-control select:hover:not(:disabled) {
+    border-color: rgba(148, 163, 184, 0.5);
+    background-color: rgba(148, 163, 184, 0.16);
+  }
+
+  .empty-control select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .empty-control.deck-readonly code {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    background: rgba(148, 163, 184, 0.12);
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+  }
+
+  .empty-error {
+    color: #b91c1c;
+    font-size: 0.85rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    margin: 0;
+    max-width: 480px;
   }
 
   .curate-btn:hover:not(:disabled) {
@@ -966,6 +1640,18 @@
       color: #ddd6fe;
     }
     .curation-banner.error {
+      background: #3f1d1d;
+      border-color: #7f1d1d;
+      color: #fecaca;
+    }
+    .empty-meta {
+      color: #6b7280;
+    }
+    .empty-meta code {
+      background: rgba(148, 163, 184, 0.18);
+      color: #d1d5db;
+    }
+    .empty-error {
       background: #3f1d1d;
       border-color: #7f1d1d;
       color: #fecaca;

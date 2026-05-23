@@ -60,11 +60,14 @@
   let resuming = $state(false);
   let resumeError = $state<string | null>(null);
 
-  // Resume is available whenever a run failed (whether the user stopped it or
-  // it errored) AND we know an output_dir on disk. The orchestrator's resume
-  // CLI walks that dir for checkpoints; with no dir, there's nothing to detect.
+  // Resume is available whenever a run failed (user-stopped or errored) AND we
+  // have a firm to scope the lookup. We deliberately don't require outputDir:
+  // it's only populated by the 'complete' event, which never fires for runs
+  // that stall mid-flight — but those are exactly the runs the user most wants
+  // to resume. The resume endpoint walks io/{firm}/deals/{deal}/outputs/ itself
+  // and reports gracefully if there's nothing to pick up.
   let canResume = $derived(
-    status === 'failed' && !!outputDir && !!settings.activeFirm
+    status === 'failed' && !!settings.activeFirm
   );
 
   function close() {
