@@ -5,14 +5,19 @@ import sitemap from '@astrojs/sitemap';
 
 // https://astro.build/config
 //
-// Hosted on GitHub Pages from the `lossless-group/memopop-ai` repo.
-// Live URL: https://lossless-group.github.io/memopop-ai/
+// Dual deploy target:
+//   • GitHub Pages → project page under /memopop-ai/ (lossless-group.github.io/memopop-ai/)
+//   • Vercel       → served at the domain root (/)
+// Vercel sets process.env.VERCEL at build time. Key `base` + `site` off it so
+// asset URLs resolve on both hosts — otherwise the /memopop-ai/ base prefix
+// 404s every CSS/JS asset on the Vercel domain and the page renders unstyled.
 //
-// If a custom domain is added later (e.g. memopop.lossless.group via a
-// public/CNAME file), set `site` to that domain and `base` to '/'.
+// Custom domain later? Point `site` at it and force base '/' (drop the branch).
+const isVercel = !!process.env.VERCEL;
+
 export default defineConfig({
-  site: 'https://lossless-group.github.io',
-  base: '/memopop-ai/',
+  site: isVercel ? 'https://splashmemopop-ai.vercel.app' : 'https://lossless-group.github.io',
+  base: isVercel ? '/' : '/memopop-ai/',
   trailingSlash: 'ignore',
 
   integrations: [

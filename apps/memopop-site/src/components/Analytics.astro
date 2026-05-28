@@ -5,7 +5,7 @@
 //
 // Two gates before OpenPanel renders: (1) prod build only, so localhost
 // doesn't pollute the dashboard; (2) clientId must be present, so a
-// misconfigured CI doesn't ship a broken <script> tag. The `op` shim is the
+// misconfigured CI doesn't ship a broken loader. The op() shim is the
 // canonical OpenPanel queue-then-flush pattern from openpanel.dev/op1.js.
 const isProd = import.meta.env.PROD;
 const openPanelClientId = import.meta.env.OPENPANEL_CLIENT_ID;
