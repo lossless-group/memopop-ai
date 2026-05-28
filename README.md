@@ -191,6 +191,14 @@ bun --filter memopop-native check     # Svelte/TS type-check
 cargo check --manifest-path apps/memopop-native/src-tauri/Cargo.toml
 ```
 
+## Similar Services
+
+MemoPop is open source. If you'd rather not run a Python library and the command line, several commercial vendors operate in this space — including:
+
+- [DataroomHQ](https://www.dataroomhq.ai/) — AI-powered virtual data room for fundraising that generates investor-grade materials (data decks, financial analysis, investment memos) and tracks investor engagement.
+
+The orchestrator README keeps a fuller, categorized list of comparable platforms: see [Similar Services](apps/memopop-orchestrator/README.md#similar-services).
+
 ## License
 
 MIT
