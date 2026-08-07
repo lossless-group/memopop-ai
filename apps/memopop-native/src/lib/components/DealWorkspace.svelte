@@ -8,6 +8,7 @@
   import { flow } from '$lib/stores/flow.svelte';
   import { getTransport } from '$lib/transport';
   import { openWithPreferred, revealInVaultOrFinder } from '$lib/openers';
+  import SourceApproval from '$lib/components/SourceApproval.svelte';
   import type { Outline } from '$lib/types';
 
   interface Props {
@@ -48,6 +49,12 @@
   let curating = $state(false);
   let curationResult = $state<CurationResult | null>(null);
   let curationError = $state<string | null>(null);
+
+  // Source approval for an already-saved deal. Distinct from the create-deal
+  // flow's `approving_sources` stage — same surface, reached from a deal that
+  // already exists on disk, so it commits and closes rather than advancing a
+  // journey.
+  let approvingSources = $state(false);
 
   // Deal config (the on-disk deal.json or {deal}.json). Loaded once on mount;
   // used by the "Run MemoPop" action to replay all fields to /memos with full
@@ -560,6 +567,17 @@
   });
 </script>
 
+{#if approvingSources}
+  <!-- Takes over the workspace rather than opening a modal: the same list
+       work as in the create-deal flow, so it gets the same room. -->
+  <SourceApproval
+    {firm}
+    {deal}
+    showSkip={false}
+    onBack={() => (approvingSources = false)}
+    onDone={() => (approvingSources = false)}
+  />
+{:else}
 <section class="page">
   <header class="head">
     <div class="head-lead">
@@ -655,12 +673,24 @@
           </button>
         </div>
       {/if}
+      <!-- Approve sources BEFORE a run: the analyst's set is what the
+           membership gate enforces. Distinct from "Curate Best Sources",
+           which merges 3-source-catalog/ across *completed* runs and is
+           therefore unavailable until at least one run has produced one. -->
+      <button
+        type="button"
+        class="approve-btn"
+        onclick={() => (approvingSources = true)}
+        title="Review and approve the sources this deal's memo may cite"
+      >
+        <span aria-hidden="true">📋</span> Approve Sources
+      </button>
       <button
         type="button"
         class="curate-btn"
         onclick={curateBestSources}
         disabled={curating || versions.length === 0}
-        title="Merge every version's source catalog into one curated best-of set under exports/best-of-sources/"
+        title="Merge every completed run's 3-source-catalog/ into one best-of set. Requires at least one run that got far enough to produce a catalog — to approve sources before a run, use Approve Sources."
       >
         {#if curating}
           <span class="curate-spinner" aria-hidden="true">⏳</span> Curating…
@@ -939,6 +969,7 @@
     </div>
   {/if}
 </section>
+{/if}
 
 <style>
   .page {
@@ -1064,6 +1095,36 @@
 
   .version-select:hover:not(:disabled) {
     border-color: var(--ctl-border-hover);
+  }
+
+  /* Deliberately quieter than .curate-btn: approving sources is the routine
+     pre-run step, not the showy cross-version merge. */
+  .approve-btn {
+    height: var(--ctl-height);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: transparent;
+    color: inherit;
+    border: 1px solid #d1d5db;
+    padding: 0 0.85rem;
+    border-radius: var(--ctl-radius);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .approve-btn:hover {
+    background: rgba(124, 58, 237, 0.08);
+    border-color: #7c3aed;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .approve-btn {
+      border-color: #3a3a3c;
+    }
   }
 
   .curate-btn {

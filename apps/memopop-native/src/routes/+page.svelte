@@ -8,6 +8,7 @@
   import DealCreationModal from '$lib/components/DealCreationModal.svelte';
   import JobView from '$lib/components/JobView.svelte';
   import BrandSetupModal from '$lib/components/BrandSetupModal.svelte';
+  import SourceApproval from '$lib/components/SourceApproval.svelte';
 </script>
 
 {#if !settings.loaded}
@@ -16,6 +17,13 @@
   <AnchorOrchestrator />
 {:else if flow.stage.kind === 'running_job'}
   <JobView outline={flow.stage.outline} jobId={flow.stage.jobId} />
+{:else if flow.stage.kind === 'approving_sources'}
+  <!-- Full surface, not a modal: approving 40+ sources is list work, and a
+       dialog box that size fights the task. -->
+  <SourceApproval
+    firm={settings.activeFirm ?? ''}
+    deal={flow.stage.payload.companyName || flow.stage.payload.companyUrl}
+  />
 {:else}
   <OutlineGallery />
 

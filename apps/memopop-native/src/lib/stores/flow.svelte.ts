@@ -60,6 +60,11 @@ export type FlowStage =
   | { kind: 'outline_detail'; outline: Outline }
   | { kind: 'create_firm'; outline: Outline }
   | { kind: 'create_deal'; outline: Outline }
+  // Source approval sits between defining the memo and running it. Curation
+  // is frontloaded on purpose: candidates come from a search index (never a
+  // language model), so no run ever starts against an unconstrained corpus.
+  // See context-v/loops/Frontloaded-Source-Approval-Loop.md.
+  | { kind: 'approving_sources'; outline: Outline; payload: DealPayload }
   | { kind: 'ready_to_run'; outline: Outline; payload: DealPayload }
   | {
       kind: 'running_job';
@@ -109,8 +114,27 @@ class FlowState {
     this.stage = { kind: 'ready_to_run', outline, payload };
   }
 
+  /** Move from a defined deal into source approval. */
+  startApprovingSources(outline: Outline, payload: DealPayload) {
+    this.stage = { kind: 'approving_sources', outline, payload };
+  }
+
+  /** Sources approved (or skipped) — the run may now be launched. */
+  sourcesSettled() {
+    if (this.stage.kind !== 'approving_sources') return;
+    this.stage = {
+      kind: 'ready_to_run',
+      outline: this.stage.outline,
+      payload: this.stage.payload,
+    };
+  }
+
   editDeal() {
-    if (this.stage.kind === 'ready_to_run' || this.stage.kind === 'running_job') {
+    if (
+      this.stage.kind === 'ready_to_run' ||
+      this.stage.kind === 'running_job' ||
+      this.stage.kind === 'approving_sources'
+    ) {
       this.stage = { kind: 'create_deal', outline: this.stage.outline };
     }
   }

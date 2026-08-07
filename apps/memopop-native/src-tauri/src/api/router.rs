@@ -156,6 +156,26 @@ pub async fn api_dispatch(
             forward_to_sidecar(&app, &body, &method, &path).await
         }
 
+        // --- Source approval surface ---
+        // Frontloaded curation: the analyst approves the corpus before the
+        // run starts, and the sidecar's membership gate enforces it after.
+        // Candidate discovery (`search-sources`) hits SearXNG, never an LLM —
+        // a URL from a search index cannot be fabricated.
+        ("GET", p) | ("POST", p)
+            if p.starts_with("/firms/")
+                && p.contains("/deals/")
+                && p.ends_with("/sources") =>
+        {
+            forward_to_sidecar(&app, &body, &method, p).await
+        }
+
+        ("POST", "/actions/search-sources")
+        | ("POST", "/actions/fetch-source")
+        | ("POST", "/actions/recover-source")
+        | ("POST", "/actions/approve-sources") => {
+            forward_to_sidecar(&app, &body, &method, &path).await
+        }
+
         // --- Sidecar-forwarded routes (FastAPI orchestrator API) ---
         // The sidecar is lazy-spawned on the first /memos call. SSE streaming
         // (`/memos/{id}/events`) intentionally goes direct from the webview to

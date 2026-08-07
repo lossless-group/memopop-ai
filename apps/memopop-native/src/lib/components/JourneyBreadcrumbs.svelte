@@ -2,7 +2,7 @@
   import { settings } from '$lib/stores/settings.svelte';
   import { flow } from '$lib/stores/flow.svelte';
 
-  type StepId = 'outline' | 'firm' | 'deal' | 'generate';
+  type StepId = 'outline' | 'firm' | 'deal' | 'curate' | 'generate';
   type StepStatus = 'done' | 'active' | 'pending';
 
   interface Step {
@@ -21,6 +21,8 @@
         return 'firm';
       case 'create_deal':
         return 'deal';
+      case 'approving_sources':
+        return 'curate';
       case 'ready_to_run':
       case 'running_job':
         return 'generate';
@@ -59,14 +61,33 @@
       // accidentally cancel a job by going back to the form.
     },
     {
+      id: 'curate',
+      label: 'Curate',
+      // Skippable by design — a first pass on a deal with nothing curated
+      // yet is legitimate. Naming it as a step (rather than hiding it behind
+      // a button on the Generate panel) is what makes skipping a decision
+      // instead of an oversight.
+      detail: currentStepId === 'curate' ? 'optional' : undefined,
+      status: statusFor('curate'),
+      onClick:
+        flow.stage.kind === 'ready_to_run'
+          ? () => {
+              if (flow.stage.kind !== 'ready_to_run') return;
+              flow.startApprovingSources(flow.stage.outline, flow.stage.payload);
+            }
+          : undefined,
+    },
+    {
       id: 'generate',
       label: 'Generate',
       status: statusFor('generate'),
+      onClick:
+        flow.stage.kind === 'approving_sources' ? () => flow.sourcesSettled() : undefined,
     },
   ]);
 
   function statusFor(id: StepId): StepStatus {
-    const order: StepId[] = ['outline', 'firm', 'deal', 'generate'];
+    const order: StepId[] = ['outline', 'firm', 'deal', 'curate', 'generate'];
     const currentIdx = order.indexOf(currentStepId);
     const stepIdx = order.indexOf(id);
 
@@ -85,11 +106,13 @@
   function progressFromCurrent(id: StepId, hasFirmNow: boolean): number {
     switch (id) {
       case 'outline':
-        return hasFirmNow ? 33 : 0;
+        return hasFirmNow ? 25 : 0;
       case 'firm':
-        return 33;
+        return 25;
       case 'deal':
-        return 66;
+        return 50;
+      case 'curate':
+        return 75;
       case 'generate':
         return 100;
     }

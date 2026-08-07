@@ -82,6 +82,11 @@
   // confirmation. Empty until the user has typed something to slugify.
   let slugPreview = $derived(dealSlug(companyName));
 
+  function reviewSources() {
+    if (flow.stage.kind !== 'ready_to_run') return;
+    flow.startApprovingSources(flow.stage.outline, flow.stage.payload);
+  }
+
   async function generate() {
     if (flow.stage.kind !== 'ready_to_run') return;
     if (!settings.repoPath) {
@@ -285,6 +290,13 @@
       <footer class="modal-foot">
         <button type="button" class="ghost" onclick={editInputs} disabled={submitting}>
           ← Edit inputs
+        </button>
+        <!-- Curation is offered before the run, not after: a memo written
+             against an unconstrained corpus can't be fixed by approving
+             sources afterwards. Generating directly stays available for a
+             first pass where there's nothing to curate yet. -->
+        <button type="button" class="ghost" onclick={reviewSources} disabled={submitting}>
+          Review sources first
         </button>
         <button type="button" class="cta" onclick={generate} disabled={submitting}>
           {submitting ? 'Starting…' : 'Generate memo →'}
