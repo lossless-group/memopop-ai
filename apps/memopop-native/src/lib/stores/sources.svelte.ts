@@ -34,6 +34,17 @@ export interface SourceRow {
    * exists to stop confusing with "did we approve it?".
    */
   machineVerdict?: string;
+  /** `internal_only` must never be silently downgraded — it governs
+   *  whether a source may be cited outside the firm. */
+  sensitivity: string;
+  /**
+   * The source's frontmatter exactly as it was read, so a write can
+   * round-trip keys this UI does not model. The GET endpoint preserves
+   * hand-added keys on purpose; without this the write path discarded
+   * them, which is how 93 sources lost `sensitivity` and 8 of them lost
+   * `internal_only`.
+   */
+  raw?: Record<string, unknown>;
   /** Present on search results — which query surfaced this. */
   found_via?: string;
   /** Already in the corpus. Flagged, never hidden. */
@@ -95,6 +106,7 @@ function blankRow(url: string, partial: Partial<SourceRow> = {}): SourceRow {
     published_date: '',
     sections: [],
     rank: 1,
+    sensitivity: 'citable_externally',
     verdict: '',
     verdict_reason: '',
     note: '',
@@ -122,6 +134,16 @@ class SourcesState {
   saving = $state(false);
   error = $state<string | null>(null);
 
+  // Autosave. 80+ sources is not one sitting's work, and a manual-save-only
+  // surface loses a session to a closed window. Every mutation schedules a
+  // debounced write; the UI shows which of these three states it is in so
+  // "is my work safe" is never a guess.
+  dirty = $state(false);
+  lastSavedAt = $state<string | null>(null);
+  autosaveError = $state<string | null>(null);
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly DEBOUNCE_MS = 1200;
+
   // Search panel
   query = $state('');
   searching = $state(false);
@@ -131,12 +153,23 @@ class SourcesState {
 
   // Per-URL transient UI state, keyed by url.
   previews = $state<Record<string, string>>({});
+  /** URLs whose cheap-tier metadata lookup is in flight. */
+  fetchingMeta = $state<Set<string>>(new Set());
+  private inFlightMeta = 0;
+  private static readonly META_CONCURRENCY = 3;
   busyUrl = $state<string | null>(null);
   recoveries = $state<Record<string, RecoveryCandidate | { failed: string }>>({});
 
   approvedCount = $derived(this.rows.filter((r) => r.verdict === 'approved').length);
   rejectedCount = $derived(this.rows.filter((r) => r.verdict === 'rejected').length);
   unreviewedCount = $derived(this.rows.filter((r) => r.verdict === '').length);
+  reviewedCount = $derived(this.rows.length - this.unreviewedCount);
+  /** Index of the first unreviewed row — where to resume a part-done list. */
+  firstUnreviewedIndex = $derived(this.rows.findIndex((r) => r.verdict === ''));
+
+  saveState = $derived(
+    this.saving ? 'saving' : this.dirty ? 'unsaved' : this.lastSavedAt ? 'saved' : 'clean',
+  );
 
   /** URLs already in the list — used to flag duplicate search results. */
   private urlSet = $derived(new Set(this.rows.map((r) => r.url.trim())));
@@ -170,6 +203,8 @@ class SourcesState {
           published_date: String(s.published_date ?? ''),
           sections: Array.isArray(s.sections) ? (s.sections as string[]) : [],
           rank: Number(s.rank ?? 1) || 1,
+          sensitivity: String(s.sensitivity ?? 'citable_externally'),
+          raw: s,
           ...splitVerdict(String(s.verdict ?? '')),
           verdict_reason: String(s.verdict_reason ?? ''),
           note: String(s.note ?? ''),
@@ -191,14 +226,42 @@ class SourcesState {
     this.rows = this.rows.map((r) =>
       r.url === url ? { ...r, verdict, verdict_reason: verdict === 'rejected' ? reason : '' } : r,
     );
+    this.touch();
   }
 
   approveAllUnreviewed() {
     this.rows = this.rows.map((r) => (r.verdict === '' ? { ...r, verdict: 'approved' } : r));
+    this.touch();
   }
 
   remove(url: string) {
     this.rows = this.rows.filter((r) => r.url !== url);
+    this.touch();
+  }
+
+  /** Mark unsaved and schedule a debounced autosave. */
+  touch() {
+    this.dirty = true;
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => void this.autosave(), SourcesState.DEBOUNCE_MS);
+  }
+
+  private async autosave() {
+    if (!this.firm || !this.deal || !this.dirty) return;
+    const ok = await this.write(false, { autosave: true });
+    // A failed autosave must NOT clear `dirty` — the work is still only in
+    // memory, and telling the analyst it is saved would be the one lie this
+    // surface cannot afford.
+    this.autosaveError = ok ? null : this.error;
+  }
+
+  /** Write immediately, e.g. before navigating away. */
+  async flush() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    if (this.dirty) await this.autosave();
   }
 
   /** Add a URL by paste. Returns false when it is already in the list. */
@@ -206,11 +269,88 @@ class SourcesState {
     const clean = url.trim();
     if (!clean || this.urlSet.has(clean)) return false;
     this.rows = [...this.rows, blankRow(clean, { verdict: 'approved', ...partial })];
+    this.touch();
+    // Fire-and-forget so the row appears instantly; the title fills in a
+    // beat later. Skipped when the caller already supplied one (search
+    // results arrive with a title from the index).
+    if (!partial.title) void this.fetchMetadata(clean);
     return true;
   }
 
   hasUrl(url: string): boolean {
     return this.urlSet.has(url.trim());
+  }
+
+  // ---- Metadata -----------------------------------------------------------
+
+  /**
+   * Fold a fetch response into the row. The single merge point for both
+   * the paste path and Preview, so the two cannot drift.
+   *
+   * Fill-the-blanks, never replace: a scraped <title> is frequently worse
+   * than what a person typed (SEO suffixes, site names, truncation), and
+   * making the merge additive is also what makes re-fetching idempotent.
+   */
+  applyFetchedMetadata(
+    url: string,
+    res: { title?: string; published_at?: string; excerpt?: string },
+  ) {
+    let changed = false;
+    this.rows = this.rows.map((r) => {
+      if (r.url !== url) return r;
+      const next = { ...r };
+      if (!next.title && res.title) { next.title = res.title; changed = true; }
+      if (!next.published_date && res.published_at) {
+        next.published_date = res.published_at;
+        changed = true;
+      }
+      return next;
+    });
+    if (changed) this.touch();
+  }
+
+  /**
+   * The cheap tier: metadata + excerpt, no body stored.
+   *
+   * Fired on paste so a row can name itself. Without it `add()` leaves
+   * title empty and the UI falls back to the hostname — 80 rows reading
+   * "cbinsights.com" are unscannable, and re-search is dead because
+   * attempt_url_recovery needs a title.
+   *
+   * Concurrency-gated: pasting ten links in a row should not fire ten
+   * simultaneous Jina calls.
+   */
+  async fetchMetadata(url: string) {
+    if (!this.firm || !this.deal) return;
+    if (this.fetchingMeta.has(url)) return;
+
+    while (this.inFlightMeta >= SourcesState.META_CONCURRENCY) {
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    this.inFlightMeta += 1;
+    this.fetchingMeta = new Set([...this.fetchingMeta, url]);
+    try {
+      const res = await getTransport().request<{
+        ok: boolean;
+        title?: string;
+        published_at?: string;
+        excerpt?: string;
+      }>('POST', '/actions/fetch-source', withRepo({
+        url,
+        firm: this.firm,
+        deal: this.deal,
+        metadata_only: true,
+      }));
+      if (res.ok) this.applyFetchedMetadata(url, res);
+    } catch {
+      // A failed lookup leaves the row showing its host — degraded, but
+      // still reviewable and approvable. Never block on metadata.
+    } finally {
+      this.inFlightMeta -= 1;
+      const next = new Set(this.fetchingMeta);
+      next.delete(url);
+      this.fetchingMeta = next;
+    }
   }
 
   // ---- Search -----------------------------------------------------------
@@ -266,11 +406,33 @@ class SourcesState {
     }
     this.busyUrl = url;
     try {
+      // firm/deal let the sidecar file the fetched content as a per-source
+      // markdown file instead of us rendering it once and dropping it.
+      // title/publisher seed the frontmatter from what the analyst already
+      // curated, rather than whatever the page's <title> happens to say.
+      const row = this.rows.find((r) => r.url === url);
       const res = await getTransport().request<{
         ok: boolean;
         markdown?: string;
         error?: string;
-      }>('POST', '/actions/fetch-source', withRepo({ url }));
+        saved_to?: string | null;
+        title?: string;
+        published_at?: string;
+        excerpt?: string;
+      }>(
+        'POST',
+        '/actions/fetch-source',
+        withRepo({
+          url,
+          firm: this.firm ?? undefined,
+          deal: this.deal ?? undefined,
+          title: row?.title || undefined,
+          publisher: row?.publisher || undefined,
+        }),
+      );
+      // Preview corrects a bad title too — the metadata was already
+      // fetched, so discarding it here is what produced the a16z bug.
+      if (res.ok) this.applyFetchedMetadata(url, res);
       this.previews = {
         ...this.previews,
         [url]: res.ok ? (res.markdown ?? '') : `Could not fetch: ${res.error ?? 'unknown error'}`,
@@ -327,6 +489,7 @@ class SourcesState {
     );
     const { [originalUrl]: _drop, ...rest } = this.recoveries;
     this.recoveries = rest;
+    this.touch();
   }
 
   dismissRecovery(url: string) {
@@ -336,9 +499,13 @@ class SourcesState {
 
   // ---- Commit -----------------------------------------------------------
 
-  /** Save without committing to codified mode. */
+  /** An explicit checkpoint. Always backs up, unlike an autosave. */
   async saveDraft(): Promise<boolean> {
-    return this.write(false);
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    return this.write(false, { autosave: false });
   }
 
   /**
@@ -349,7 +516,7 @@ class SourcesState {
     return this.write(true);
   }
 
-  private async write(codify: boolean): Promise<boolean> {
+  private async write(codify: boolean, opts: { autosave?: boolean } = {}): Promise<boolean> {
     if (!this.firm || !this.deal) return false;
     this.saving = true;
     this.error = null;
@@ -359,13 +526,19 @@ class SourcesState {
         deal: this.deal,
         meta: this.meta,
         body: this.body,
+        // Spread the original frontmatter first so unmodelled keys
+        // survive; the fields this UI owns then override. A write must
+        // never be able to delete a field just because the UI does not
+        // render it.
         sources: this.rows.map((r) => ({
+          ...(r.raw ?? {}),
           url: r.url,
           title: r.title,
           publisher: r.publisher,
           published_date: r.published_date,
           sections: r.sections,
           rank: r.rank,
+          sensitivity: r.sensitivity,
           verdict: r.verdict || r.machineVerdict || '',
           verdict_reason: r.verdict_reason,
           note: r.note,
@@ -378,9 +551,18 @@ class SourcesState {
         await getTransport().request(
           'POST',
           `/firms/${encodeURIComponent(this.firm)}/deals/${encodeURIComponent(this.deal)}/sources`,
-          withRepo({ meta: this.meta, sources: payload.sources, body: this.body, mode: this.mode }),
+          withRepo({
+            meta: this.meta,
+            sources: payload.sources,
+            body: this.body,
+            mode: this.mode,
+            autosave: opts.autosave ?? false,
+          }),
         );
       }
+      // Only a write that actually landed may clear the dirty flag.
+      this.dirty = false;
+      this.lastSavedAt = new Date().toISOString();
       return true;
     } catch (e) {
       this.error = errText(e);
@@ -391,6 +573,13 @@ class SourcesState {
   }
 
   reset() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    this.dirty = false;
+    this.lastSavedAt = null;
+    this.autosaveError = null;
     this.rows = [];
     this.candidates = [];
     this.previews = {};

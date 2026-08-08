@@ -80,15 +80,13 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div
-  class="backdrop"
-  onclick={handleBackdropClick}
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="outline-detail-title"
-  tabindex="-1"
->
-  <div class="modal">
+<!-- The backdrop is decorative: it exists to dim the page and to catch a
+     click-outside. The dialog is the .modal panel below, which is where the
+     dialog role, aria-modal and the label now live. Marking this
+     presentational is what makes the click-without-keydown correct rather
+     than suppressed — Escape closes via the window handler above. -->
+<div class="backdrop" onclick={handleBackdropClick} role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="outline-detail-title" tabindex="-1">
     <header class="modal-head">
       <div class="head-meta">
         <span class="badge {outline.outline_type === 'fund_commitment' ? 'fund' : 'direct'}">

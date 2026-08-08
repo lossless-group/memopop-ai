@@ -420,43 +420,12 @@
     font-size: 0.9rem;
   }
 
-  .onboarding {
-    background: #f5f3ff;
-    border: 1px solid #ddd6fe;
-    border-radius: 8px;
-    padding: 1.25rem 1.5rem;
-    margin-bottom: 2rem;
-  }
 
-  .onboarding h2 {
-    font-size: 1rem;
-    margin: 0 0 0.5rem;
-    color: #5b21b6;
-  }
 
-  .onboarding p {
-    margin: 0.5rem 0;
-    font-size: 0.9rem;
-    line-height: 1.45;
-  }
 
-  .onboarding ol {
-    margin: 0.75rem 0;
-    padding-left: 1.25rem;
-  }
 
-  .onboarding li {
-    margin-bottom: 0.6rem;
-    font-size: 0.9rem;
-    line-height: 1.45;
-  }
 
-  .onboarding .aside-note {
-    font-style: italic;
-    color: #6b7280;
-  }
 
-  button.link,
   button.inline-link {
     background: transparent;
     border: none;
@@ -468,7 +437,6 @@
     text-underline-offset: 2px;
   }
 
-  button.link:hover,
   button.inline-link:hover {
     background: transparent;
     color: #4c1d95;
@@ -519,25 +487,13 @@
       color: #c8e6c9;
     }
 
-    .onboarding {
-      background: #2a1f3d;
-      border-color: #5b21b6;
-    }
 
-    .onboarding h2 {
-      color: #c4b5fd;
-    }
 
-    .onboarding .aside-note {
-      color: #9ca3af;
-    }
 
-    button.link,
     button.inline-link {
       color: #c4b5fd;
     }
 
-    button.link:hover,
     button.inline-link:hover {
       color: #ddd6fe;
     }

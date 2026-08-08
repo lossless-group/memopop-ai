@@ -235,6 +235,11 @@
 
         <label class="field">
           <span class="label">Firm website</span>
+          <!-- svelte-ignore a11y_autofocus -->
+          <!-- The rule targets autofocus on page load, which yanks a screen
+          reader away from the document. In a modal it is the opposite:
+          the WAI dialog pattern expects focus to move into the dialog on
+          open, and this is the first field. Escape returns the user. -->
           <input
             type="url"
             bind:value={url}

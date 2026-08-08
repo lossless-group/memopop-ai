@@ -1279,19 +1279,7 @@
     gap: 0.65rem;
   }
 
-  .empty-meta {
-    font-size: 0.78rem;
-    color: #9ca3af;
-    margin: 0;
-  }
 
-  .empty-meta code {
-    font-family: ui-monospace, SFMono-Regular, monospace;
-    background: rgba(148, 163, 184, 0.12);
-    padding: 0.05rem 0.4rem;
-    border-radius: 4px;
-    color: inherit;
-  }
 
   .empty-controls {
     display: flex;
@@ -1704,13 +1692,6 @@
       background: #3f1d1d;
       border-color: #7f1d1d;
       color: #fecaca;
-    }
-    .empty-meta {
-      color: #6b7280;
-    }
-    .empty-meta code {
-      background: rgba(148, 163, 184, 0.18);
-      color: #d1d5db;
     }
     .empty-error {
       background: #3f1d1d;

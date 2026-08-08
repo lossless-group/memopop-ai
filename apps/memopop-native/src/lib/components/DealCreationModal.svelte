@@ -126,15 +126,14 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div
-  class="backdrop"
-  onclick={handleBackdropClick}
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="deal-modal-title"
-  tabindex="-1"
->
+<!-- The backdrop is decorative: it dims the page and catches a click-outside.
+     The dialog is whichever .modal panel is showing, so the role, aria-modal
+     and label live there. Escape closes via the window handler above. -->
+<div class="backdrop" onclick={handleBackdropClick} role="presentation">
   {#if !isReady}
+    <!-- display: contents — a <form> cannot carry role="dialog", and this
+         wrapper generates no box so the flex layout is unchanged. -->
+    <div class="dialog-shell" role="dialog" aria-modal="true" aria-labelledby="deal-modal-title" tabindex="-1">
     <form class="modal" onsubmit={submit}>
       <header class="modal-head">
         <div class="head-meta">
@@ -189,6 +188,11 @@
 
         <label class="field">
           <span class="label">Company URL <span class="hint">(preferred)</span></span>
+          <!-- svelte-ignore a11y_autofocus -->
+          <!-- The rule targets autofocus on page load, which yanks a screen
+          reader away from the document. In a modal it is the opposite:
+          the WAI dialog pattern expects focus to move into the dialog on
+          open, and this is the first field. Escape returns the user. -->
           <input
             type="url"
             bind:value={companyUrl}
@@ -236,8 +240,9 @@
         </button>
       </footer>
     </form>
+    </div>
   {:else}
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deal-modal-title" tabindex="-1">
       <header class="modal-head">
         <h2 id="deal-modal-title">Ready to generate</h2>
         <button type="button" class="close" onclick={close} aria-label="Close">
@@ -307,6 +312,11 @@
 </div>
 
 <style>
+  /* Generates no box — purely a semantic container for the dialog role. */
+  .dialog-shell {
+    display: contents;
+  }
+
   .backdrop {
     position: fixed;
     inset: 0;

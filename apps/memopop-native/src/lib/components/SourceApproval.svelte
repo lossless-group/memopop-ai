@@ -1,7 +1,12 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
+  import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { flow } from '$lib/stores/flow.svelte';
   import { sources, DENY_REASONS } from '$lib/stores/sources.svelte';
+
+  /** One reused window — clicking through 79 candidates must not open 79. */
+  const QUICK_LOOK = 'quick-look';
 
   interface Props {
     firm: string;
@@ -40,10 +45,66 @@
     sources.load(firm, deal);
   });
 
-  function back() {
+  async function back() {
+    await sources.flush();   // never lose a partial session to navigation
     onBack();
   }
 
+  function savedAgo(iso: string | null): string {
+    if (!iso) return '';
+    const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (secs < 5) return 'just now';
+    if (secs < 60) return `${secs}s ago`;
+    return `${Math.round(secs / 60)}m ago`;
+  }
+
+  // Re-render the "saved Ns ago" label without touching the store.
+  let tick = $state(0);
+  $effect(() => {
+    const id = setInterval(() => (tick += 1), 5000);
+    return () => clearInterval(id);
+  });
+
+  /**
+   * Open a source in a reusable in-app window.
+   *
+   * Deliberately NOT an iframe. 14 of the first 24 real ImmuneCo sources send
+   * X-Frame-Options — nejm.org, thelancet.com, science.org, pmc.ncbi.nlm.nih.gov,
+   * who.int, epa.gov, forbes.com among them — so a majority would render as a
+   * blank box, and cross-origin that failure is silent (no usable onerror, no
+   * readable contentDocument), meaning the UI could not even admit it failed.
+   *
+   * A second webview is a *top-level navigation*, so frame policy never
+   * applies: 100% of sources render. WebKit is already resident, so there is
+   * no browser cold start either — which is the point, since handing off to a
+   * browser carrying a day of tabs is what made this slow.
+   *
+   * Close-and-recreate rather than re-navigate: Tauri 2 has no clean
+   * "point this webview somewhere else" call, and recreating avoids carrying
+   * history or scroll state between unrelated sources.
+   */
+  async function quickLook(url: string) {
+    try {
+      const existing = await WebviewWindow.getByLabel(QUICK_LOOK);
+      if (existing) await existing.close();
+
+      const w = new WebviewWindow(QUICK_LOOK, {
+        url,
+        title: `Quick look — ${hostOf(url)}`,
+        width: 1100,
+        height: 900,
+        center: true,
+      });
+      // Creation is async on the Rust side; a failure arrives as an event
+      // rather than a rejected promise, so the fallback lives here.
+      w.once('tauri://error', () => void openExternal(url));
+    } catch {
+      // Not in Tauri (browser dev mode), or window creation is unavailable.
+      await openExternal(url);
+    }
+  }
+
+  /** The escape hatch: the analyst's real browser, with their logins. */
   async function openExternal(url: string) {
     try {
       await openUrl(url);
@@ -87,6 +148,14 @@
     onDone();
   }
 
+  function jumpToFirstUnreviewed() {
+    const row = sources.rows[sources.firstUnreviewedIndex];
+    if (!row) return;
+    document
+      .querySelector(`[data-url="${CSS.escape(row.url)}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   function hostOf(url: string): string {
     try {
       return new URL(url).hostname.replace(/^www\./, '');
@@ -94,6 +163,16 @@
       return url;
     }
   }
+
+  // A quick-look window outliving the surface that opened it is confusing —
+  // and on a second visit it would sit there showing a source from the
+  // previous deal.
+  onDestroy(() => {
+    void sources.flush();
+    void WebviewWindow.getByLabel(QUICK_LOOK)
+      .then((w) => w?.close())
+      .catch(() => {});
+  });
 </script>
 
 <div class="wrap">
@@ -126,7 +205,49 @@
     {#if sources.origin === 'aggregated'}
       <span class="origin">from the aggregated worksheet</span>
     {/if}
+
+    <span class="spacer"></span>
+
+    <!-- Whether the work is safe should never be a guess on a list this
+         long. Reviewing 80 sources takes more than one sitting. -->
+    {#key tick}
+      <span class="savestate {sources.saveState}">
+        {#if sources.saveState === 'saving'}
+          Saving…
+        {:else if sources.saveState === 'unsaved'}
+          Unsaved changes
+        {:else if sources.saveState === 'saved'}
+          ✓ Saved {savedAgo(sources.lastSavedAt)}
+        {:else}
+          Autosaves as you go
+        {/if}
+      </span>
+    {/key}
   </div>
+
+  {#if sources.rows.length > 0}
+    <div class="progress" role="status">
+      <div class="bar">
+        <div
+          class="fill"
+          style="width: {Math.round((sources.reviewedCount / sources.rows.length) * 100)}%"
+        ></div>
+      </div>
+      <span class="count">
+        {sources.reviewedCount} of {sources.rows.length} reviewed
+      </span>
+      {#if sources.firstUnreviewedIndex > 0}
+        <button class="link" onclick={jumpToFirstUnreviewed}>resume where you left off →</button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if sources.autosaveError}
+    <p class="error" role="alert">
+      Autosave failed — your work is still only in this window.
+      {sources.autosaveError}
+    </p>
+  {/if}
 
   <!-- Add a link: the action reached for most often, so it stays one
        field and one button at the top rather than buried in a panel. -->
@@ -150,19 +271,26 @@
     {/if}
 
     {#each sources.rows as row (row.url)}
-      <article class="row {row.verdict}">
+      <article class="row {row.verdict}" data-url={row.url}>
         <div class="main">
           <div class="title-line">
-            <button class="titlebtn" onclick={() => openExternal(row.url)} title="Open in browser">
+            <button
+              class="titlebtn"
+              onclick={() => quickLook(row.url)}
+              title="Quick look (same as ⧉ Look)"
+            >
               {row.title || hostOf(row.url)}
             </button>
+            {#if sources.fetchingMeta.has(row.url)}
+              <span class="fetching" title="Looking up the title">…</span>
+            {/if}
             {#if row.verdict === 'approved'}<span class="tick">✓</span>{/if}
             {#if row.verdict === 'rejected'}<span class="cross">✕</span>{/if}
           </div>
           <div class="meta">
             <span class="host">{hostOf(row.url)}</span>
             {#if row.publisher}<span>· {row.publisher}</span>{/if}
-            {#if row.published_date}<span>· {row.published_date}</span>{/if}
+            {#if row.published_date}<span class="pubdate">· {row.published_date}</span>{/if}
             {#if row.verdict_reason}<span class="reason">· {row.verdict_reason}</span>{/if}
             <!-- The validator's reachability result, shown as context but
                  never counted as approval. That conflation is the bug this
@@ -194,6 +322,24 @@
             disabled={sources.busyUrl === row.url}
             onclick={() => sources.preview(row.url)}
           >{sources.previews[row.url] ? 'Hide' : 'Preview'}</button>
+
+          <!-- Both open-modes get a visible control. Title-click is the
+               same as Look, but a bare underlined title is indistinguishable
+               from "opens in browser" — an affordance you find by accident
+               is not an affordance. -->
+          <button
+            class="act"
+            onclick={() => quickLook(row.url)}
+            title="Quick look — renders here, instantly, even on sites that block embedding"
+          >⧉ Look</button>
+
+          <!-- The real browser, with the analyst's logins and paywall
+               subscriptions. Quick look can't have those. -->
+          <button
+            class="act"
+            onclick={() => openExternal(row.url)}
+            title="Open in your default browser"
+          >↗</button>
         </div>
 
         {#if denyingUrl === row.url}
@@ -220,7 +366,7 @@
                 <div class="recurl">{rec.recovered_url}</div>
               </div>
               <div class="recact">
-                <button class="chip" onclick={() => openExternal(rec.recovered_url)}>open</button>
+                <button class="chip" onclick={() => quickLook(rec.recovered_url)}>open</button>
                 <button class="chip go" onclick={() => sources.acceptRecovery(row.url)}>
                   use this URL
                 </button>
@@ -263,7 +409,7 @@
     {#each sources.candidates as c (c.url)}
       <article class="cand">
         <div class="main">
-          <button class="titlebtn" onclick={() => openExternal(c.url)}>
+          <button class="titlebtn" onclick={() => quickLook(c.url)} title="Quick look">
             {c.title || hostOf(c.url)}
           </button>
           <div class="meta">
@@ -288,8 +434,8 @@
       <button class="ghost" onclick={skip}>Skip — run unconstrained</button>
     {/if}
     <div class="spacer"></div>
-    <button class="ghost" onclick={() => sources.saveDraft()} disabled={sources.saving}>
-      Save draft
+    <button class="ghost" onclick={() => sources.saveDraft()} disabled={sources.saving} title="Take an explicit, backed-up checkpoint (autosave already keeps your work)">
+      Checkpoint
     </button>
     <button
       class="primary"
@@ -386,6 +532,37 @@
   .origin {
     color: var(--s-muted);
   }
+  .tally .spacer { flex: 1; }
+
+  .savestate {
+    font-size: 0.78rem;
+    color: var(--s-muted);
+    white-space: nowrap;
+  }
+  .savestate.saved { color: #16a34a; }
+  .savestate.unsaved { color: #d97706; }
+  .savestate.saving { opacity: 0.7; }
+
+  .progress {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.78rem;
+    color: var(--s-muted);
+  }
+  .progress .bar {
+    flex: 1;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--s-surface-hover);
+    overflow: hidden;
+  }
+  .progress .fill {
+    height: 100%;
+    background: #16a34a;
+    transition: width 180ms ease-out;
+  }
+  .progress .count { white-space: nowrap; }
 
   /* Inputs must not assume a white page. */
   .paste,
@@ -488,6 +665,17 @@
   .known {
     color: #d97706;
   }
+  .fetching {
+    color: var(--s-muted);
+    font-size: 0.85rem;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+  .pubdate { font-variant-numeric: tabular-nums; }
+
   .machine {
     color: var(--s-muted);
     font-style: italic;

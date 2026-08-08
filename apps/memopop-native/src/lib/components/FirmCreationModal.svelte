@@ -61,14 +61,17 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div
-  class="backdrop"
-  onclick={handleBackdropClick}
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="firm-modal-title"
-  tabindex="-1"
->
+<!-- The backdrop is decorative: it exists to dim the page and to catch a
+     click-outside. The dialog is the .modal panel below, which is where the
+     dialog role, aria-modal and the label now live. Marking this
+     presentational is what makes the click-without-keydown correct rather
+     than suppressed — Escape closes via the window handler above. -->
+<div class="backdrop" onclick={handleBackdropClick} role="presentation">
+  <!-- The dialog role belongs on a generic container, not on <form> (a form
+       is not an interactive element and cannot carry it). `display: contents`
+       means this wrapper generates no box, so the .modal flex layout is
+       untouched. -->
+  <div class="dialog-shell" role="dialog" aria-modal="true" aria-labelledby="firm-modal-title" tabindex="-1">
   <form class="modal" onsubmit={submit}>
     <header class="modal-head">
       <h2 id="firm-modal-title">Set up your firm</h2>
@@ -86,6 +89,11 @@
 
       <label class="field">
         <span class="label">What's your firm called?</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <!-- The rule targets autofocus on page load, which yanks a screen
+        reader away from the document. In a modal it is the opposite:
+        the WAI dialog pattern expects focus to move into the dialog on
+        open, and this is the first field. Escape returns the user. -->
         <input
           type="text"
           bind:value={firmName}
@@ -122,9 +130,15 @@
       </button>
     </footer>
   </form>
+  </div>
 </div>
 
 <style>
+  /* Generates no box — purely a semantic container for the dialog role. */
+  .dialog-shell {
+    display: contents;
+  }
+
   .backdrop {
     position: fixed;
     inset: 0;
