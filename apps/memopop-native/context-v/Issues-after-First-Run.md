@@ -1,3 +1,16 @@
+---
+site_uuid: 34904652-969d-4506-82bd-eb00377dc766
+hex_code: 5h8jeb
+title: Issues After First Run
+date_created: 2026-05-01
+date_authored_initial_draft: 2026-05-01
+date_authored_current_draft: 2026-05-01
+authors:
+  - Michael Staton
+at_semantic_version: 0.0.1.0
+tags:
+  - Context-Vigilance
+---
 
 1. It wrote to the wrong dir after you said you fixed it. I already moved it to the correct location. If a user is choosing a firm, or has created a firm, the conventions are clear
 
