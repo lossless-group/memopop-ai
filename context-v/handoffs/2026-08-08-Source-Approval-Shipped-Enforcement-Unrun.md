@@ -16,6 +16,10 @@ tags:
   - Membership-Gate
   - Memopop-Native
   - Data-Recovery
+site_uuid: 32ea997f-1b3c-4747-baeb-931f50aa2089
+hex_code: ledrnx
+date_authored_initial_draft: 2026-08-08
+date_authored_current_draft: 2026-08-08
 ---
 
 ## Where things stand

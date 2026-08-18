@@ -1,6 +1,7 @@
 ---
 title: "Separating Retrieval from Generation in Agent Pipelines"
-lede: "When the same LLM agent both searches the web and writes the prose that cites those searches, it can't help fabricating URLs. This is not a bug — it's the predictable failure mode of asking one cognitive process to do two different jobs. Here's the agent topology that makes citation hallucination structurally impossible. *Updated 2026-06-08 with production evidence: Perplexity completely hallucinates sources — cannot be trusted at all. 65 fabricated `example.com` URLs in a single memo run.*"
+lede: >-
+  An agent that both searches the web and writes the prose fabricates URLs — 65 `example.com` links in a single memo run.
 date_authored_initial_draft: 2026-05-14
 date_authored_current_draft: 2026-06-08
 date_authored_final_draft:
@@ -24,6 +25,8 @@ authors:
 image_prompt: A factory line split into two stations — the first station is a librarian carefully pulling real books from a shelf and stamping each with a barcode; the second station is a writer at a typewriter pulling barcoded slips from a basket and composing prose, with a sealed glass wall between them so the writer can never reach the shelf directly; deep-violet background, technical annotation labels in a monospaced font, library-and-print-shop aesthetic.
 date_created: 2026-05-14
 date_modified: 2026-05-14
+site_uuid: 50e8e8fa-2903-41ab-a819-57d36908bbde
+hex_code: zxh70n
 ---
 
 # Separating Retrieval from Generation in Agent Pipelines

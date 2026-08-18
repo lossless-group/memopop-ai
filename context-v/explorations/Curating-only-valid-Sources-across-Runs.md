@@ -1,6 +1,7 @@
 ---
 title: "Curating Only Valid Sources Across Runs"
-lede: "The memo pipeline recycled the same sources as unique sources across sections, half of them dead pages returning HTTP 200.  Downstream curation cannot fix what `citation_enrichment.py` invents upstream. Verdict: Perplexity completely hallucinates sources — cannot be trusted at all.*"
+lede: >-
+  Downstream curation cannot fix what `citation_enrichment.py` invents upstream — 65 fabricated `example.com` URLs in a single run.
 date_authored_initial_draft: 2026-05-14
 date_authored_current_draft: 2026-06-08
 date_authored_final_draft:
@@ -16,6 +17,8 @@ authors:
 image_prompt: A pile of paper clippings stamped "HTTP 200" being run through a sieve, with most clippings falling through into a discard bin and only a few landing on a clean evidence shelf labeled "verified"; a magnifying glass over one clipping reveals a "Page Not Found" body underneath the green-stamped header; deep-violet background, library-card aesthetic, technical annotation labels in a monospaced font.
 date_created: 2026-05-14
 date_modified: 2026-08-06
+site_uuid: bc4d446b-6f49-44ba-852e-d6304d4cc23e
+hex_code: grzwxn
 ---
 
 # Curating Only Valid Sources Across Runs

@@ -16,6 +16,8 @@ authors:
 image_prompt: A group of young professionals in casual business attire, standing with their backs to the camera, looking at a large, intimidating ferry boat about to dock. Their luggage is scattered on the dock, and they look anxious and overwhelmed.
 date_created: 2026-04-29
 date_modified: 2026-04-29
+site_uuid: 8a130fa5-588b-4be9-a167-a059927c59ce
+hex_code: g4ycef
 ---
 
 # An Onboarding User Journey for memopop-native
