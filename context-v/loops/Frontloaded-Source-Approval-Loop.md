@@ -24,6 +24,7 @@ site_uuid: b7455f6d-b5f6-483a-8a6f-edccd05dad5c
 hex_code: xfjjhj
 date_authored_initial_draft: 2026-08-06
 date_authored_current_draft: 2026-08-06
+publish: false
 ---
 
 # Frontloaded Source-Approval Loop

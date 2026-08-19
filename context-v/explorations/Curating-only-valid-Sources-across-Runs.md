@@ -19,6 +19,7 @@ date_created: 2026-05-14
 date_modified: 2026-08-06
 site_uuid: bc4d446b-6f49-44ba-852e-d6304d4cc23e
 hex_code: grzwxn
+publish: true
 ---
 
 # Curating Only Valid Sources Across Runs
@@ -27,7 +28,7 @@ hex_code: grzwxn
 
 The May 14 draft framed curation as the safety net that compensates for whatever the pipeline produces upstream. We then ran the test that disproved that framing.
 
-On 2026-06-07 we ran Alpha JWC's Panthalassa Series C memo with `inputs/Sources.md` set to `mode: codified` and seven analyst-curated institutional sources (IEA, IRENA, OES, Springer Nature). Codified mode is supposed to confine the research-phase agents to those URLs and forbid broad search. The downstream `citation_enrichment.py` step then runs Perplexity Sonar Pro on each `1-research/*.md` file to "enrich" it with additional citations.
+On 2026-06-07 we ran a VC client's Series C memo with `inputs/Sources.md` set to `mode: codified` and seven analyst-curated institutional sources (IEA, IRENA, OES, Springer Nature). Codified mode is supposed to confine the research-phase agents to those URLs and forbid broad search. The downstream `citation_enrichment.py` step then runs Perplexity Sonar Pro on each `1-research/*.md` file to "enrich" it with additional citations.
 
 Result: **65 fabricated `example.com` URLs across the v0.0.2 output.** Not "URLs that returned 404." Not "soft-404s that need Pass B's body sniff." Literal `example.com` placeholder URLs — the textbook example domain that exists only as IANA's reserved illustrative namespace. Perplexity invented these whole. The verdicts from the May 14 draft (`soft-404`, `paywall`, `title-swapped`, `thin`, `fetch-failed`, `hallucinated-pattern`) don't have a category for "domain that should never appear in any production URL"; they don't need to, because no reasonable upstream pipeline should be capable of emitting one. Ours was.
 

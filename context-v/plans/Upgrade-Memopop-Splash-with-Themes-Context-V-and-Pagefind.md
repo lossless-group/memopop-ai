@@ -30,6 +30,7 @@ image_prompt: "An exploded-axonometric drawing of a small Astro site at the cent
 applies_to: apps/memopop-site
 site_uuid: 06ea3b8c-1ca7-47df-8a98-f53b44bfb6b4
 hex_code: kyhx2k
+publish: false
 ---
 
 # Upgrade the MemoPop AI splash with three-mode theming, context-v rollup, peer-aware discovery, and Pagefind

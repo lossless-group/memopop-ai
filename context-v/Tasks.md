@@ -10,6 +10,7 @@ authors:
 at_semantic_version: 0.0.1.0
 tags:
   - Context-Vigilance
+publish: false
 ---
 
 - [ ] Fix time counting. It goes in loops of 40 seconds at the top.

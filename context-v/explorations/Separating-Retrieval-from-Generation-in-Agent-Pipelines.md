@@ -27,16 +27,17 @@ date_created: 2026-05-14
 date_modified: 2026-05-14
 site_uuid: 50e8e8fa-2903-41ab-a819-57d36908bbde
 hex_code: zxh70n
+publish: true
 ---
 
 # Separating Retrieval from Generation in Agent Pipelines
 
 ## Update 2026-06-08 — Production evidence and the Perplexity verdict
 
-The May 14 draft below was written before we had a clean head-to-head test of the hypothesis. We now do. On 2026-06-07 we ran the orchestrator end-to-end for Alpha JWC's Panthalassa Series C memo with `Sources.md` in `mode: codified` and seven analyst-curated institutional sources (IEA, IRENA, OES, Springer Nature). The output of v0.0.2 contained:
+The May 14 draft below was written before we had a clean head-to-head test of the hypothesis. We now do. On 2026-06-07 we ran the orchestrator end-to-end for a VC client's Series C memo with `Sources.md` in `mode: codified` and seven analyst-curated institutional sources (IEA, IRENA, OES, Springer Nature). The output of v0.0.2 contained:
 
 - **65 fabricated `example.com` URLs across the final memo and research files.** Not "URLs that returned 404" — URLs that *never existed and could not exist*. The literal string `example.com` is the textbook placeholder domain that no source-validation pipeline should ever ingest, and we ingested 65 of them. They were emitted by `citation_enrichment.py` — Perplexity Sonar Pro doing exactly what this exploration predicted: filling citation-shaped holes from training-data memory because the prompt rewards URL production.
-- **6 firm-context leaks** ("Indonesia," "rupiah," "OJK," "Southeast Asia") in a Portland-OR company's risk and closing-assessment sections. The model conflated *firm geography* (Alpha JWC = Indonesia VC) with *company geography* (Panthalassa = US ocean-energy company), producing fabricated jurisdictional risk content for a jurisdiction the company has no exposure to.
+- **6 firm-context leaks** ("Indonesia," "rupiah," "OJK," "Southeast Asia") in a Portland-OR company's risk and closing-assessment sections. The model conflated *firm geography* (a Southeast-Asian VC) with *company geography* (a US ocean-energy company), producing fabricated jurisdictional risk content for a jurisdiction the company has no exposure to.
 - **Company name extracted as "Dropbox"** by the deck analyst, because the DocSend watermark at the top of every captured slide made the LLM decide the company was named after the watermark.
 
 Validation score: **6.5/10** — under the 8.0 auto-finalize threshold, so the pipeline correctly routed to human review. But the score reflected prose quality and structural completeness, not citation truth. *Every section that scored well still carried `example.com` citations.* The validator does not detect the failure this exploration is about.

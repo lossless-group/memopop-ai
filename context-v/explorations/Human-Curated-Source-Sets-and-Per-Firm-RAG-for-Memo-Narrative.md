@@ -28,6 +28,7 @@ date_created: 2026-05-22
 date_modified: 2026-05-22
 site_uuid: fa617119-933c-4c03-a51c-2df5409e2632
 hex_code: 91mg1l
+publish: true
 ---
 
 # Human-Curated Source Sets and Per-Firm RAG for Memo Narrative

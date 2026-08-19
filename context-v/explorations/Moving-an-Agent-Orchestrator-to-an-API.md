@@ -18,6 +18,7 @@ date_created: 2026-04-30
 date_modified: 2026-04-30
 site_uuid: 2234f38d-c925-4ac2-b286-ba7bdc3ab996
 hex_code: nlbb83
+publish: true
 ---
 
 # Moving an Agent Orchestrator to an API

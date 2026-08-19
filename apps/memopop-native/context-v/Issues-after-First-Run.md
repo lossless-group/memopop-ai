@@ -10,6 +10,7 @@ authors:
 at_semantic_version: 0.0.1.0
 tags:
   - Context-Vigilance
+publish: false
 ---
 
 1. It wrote to the wrong dir after you said you fixed it. I already moved it to the correct location. If a user is choosing a firm, or has created a firm, the conventions are clear
