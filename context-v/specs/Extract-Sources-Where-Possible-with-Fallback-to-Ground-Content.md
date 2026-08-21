@@ -348,10 +348,11 @@ inventing anything.
 
 ```bash
 LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c6
-uuidgen | tr 'A-Z' 'a-z'      # only when minting locally, not for site_uuid
+# NOTE: source_uuid is NOT generated here — the registry issues it on UPSERT.
 ```
 
-`site_uuid` is issued by the database, not generated locally.
+`source_uuid` is issued by the database, not generated locally; `hex_code` is
+minted locally. Never hand-type either.
 
 So a source file carries: standard citation metadata + `source_uuid` (issued
 by the registry) + `hex_code` (minted locally).
@@ -459,7 +460,7 @@ verdict: approved                   verdict: approved
 ## Open questions
 
 1. **Does registration block a run?** If SurrealDB is unreachable, extraction
-   must proceed and `site_uuid` backfill later. Database availability cannot gate
+   must proceed and `source_uuid` backfill later. Database availability cannot gate
    whether a memo can be written.
 2. **Who owns URL normalization?** `sources.normalized_url` is `UNIQUE`, so if
    memopop's `canonical_url()` disagrees with augment-it's JS normalizer, the
