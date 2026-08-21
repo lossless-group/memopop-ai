@@ -9,7 +9,7 @@ date_first_published:
 date_last_updated: 2026-08-20
 date_created: 2026-08-20
 date_modified: 2026-08-20
-at_semantic_version: 0.0.0.1
+at_semantic_version: 0.0.0.2
 status: Draft
 publish: false
 category: Specification
@@ -120,7 +120,7 @@ time because we already hold the bytes.
 ## Scope
 
 **In:** per-source promote-fetch, the `# Extracts` body section, grounding
-verification of extracted spans, SurrealDB registration and `site_uuid`
+verification of extracted spans, SurrealDB registration and `source_uuid`
 write-back, `hex_code` minting, and the fallback path when content cannot be
 pulled.
 
@@ -148,7 +148,7 @@ flowchart TD
     E --> V{"span verbatim<br/>in body?"}
     V -- "yes" --> G["file it<br/>grounded: true"]
     V -- "no" --> R["REJECT<br/>+ report fabrication"]
-    G --> DB["UPSERT sources (by normalized_url)<br/>→ source_uuid → site_uuid<br/>+ source_usages edge (client_slug)"]
+    G --> DB["UPSERT sources (by normalized_url)<br/>→ source_uuid<br/>+ source_usages edge (client_slug)"]
     DB --> RS["codified researcher<br/>reads EXTRACTS"]
     RS --> W["writer:<br/>coherence + prose"]
 
@@ -288,7 +288,7 @@ that skill's own rule, the shape is confirmed per table rather than assumed.
        client_slug = 'lossless',
        domain_type = 'deal',
        domain_slug = 'trustedrouter'
-4. write source_uuid into the local file's frontmatter as `site_uuid`
+4. write it into the local file's frontmatter as `source_uuid`
 ```
 
 **`client_slug: lossless`** for this work — not previously used, because it is us
@@ -296,15 +296,41 @@ and had been treated as implied. Making it explicit is the point: a convention
 applied only when load-bearing is not a convention. `domain_type: deal` /
 `domain_slug: <deal>` mirrors augment-it's `thesis` / `<thesis-slug>` pairing.
 
-**Why the local field is `site_uuid` and not `source_uuid`.** The database calls
-its key `source_uuid`; the local frontmatter deliberately does not mirror that
-name. We anticipate several databases and stores over time, and the *modifier* is
-expected to change to record which system issued a given identifier. The field
-name stays stable, the issuer does not. So:
+**The local field is `source_uuid` — the same name the registry uses.**
+
+An earlier draft of this spec called it `site_uuid`, on the reasoning that the
+name should stay stable while the issuing system changes. The reasoning is right;
+the field was wrong. `site_uuid` is already taken tree-wide: per
+[[context-vigilance]], every `context-v` file mints its own `site_uuid` locally
+with `uuidgen` as *that document's identity*. Reusing it for a
+foreign-key-to-a-registry would give one field name two meanings in one repo.
+
+So the local frontmatter mirrors the registry exactly:
 
 ```
-SurrealDB  sources.source_uuid   ──►   local frontmatter  site_uuid
+SurrealDB  sources.source_uuid   ──►   local frontmatter  source_uuid
 ```
+
+One name across `augment-it`, `corpora-builder` and memopop — which is what the
+reconciliation blueprint exists to produce. `surreal_uuid` was considered and
+rejected: it encodes a vendor in a field name, so migrating off SurrealDB makes
+the name false and forces a rename across three apps.
+
+If a second issuer ever appears, that is a separate scalar rather than a rename:
+
+```yaml
+source_uuid: 01H8X…       # the identifier
+uuid_issuer: surrealdb    # add ONLY when a second issuer exists
+```
+
+Keep the name stable; put the issuer in its own key.
+
+Identity on a source file therefore comes from two places, deliberately:
+
+| Field | Minted by | Meaning |
+|---|---|---|
+| `source_uuid` | SurrealDB, on UPSERT | shared identity of this URL across apps |
+| `hex_code` | locally, `tr -dc 'a-z0-9'` | this file's short local handle |
 
 This also resolves open question 3 in [[Source-File-Schema-Reconciliation]],
 which deferred `source_uuid` on the grounds that "memopop has no registry."
@@ -327,8 +353,8 @@ uuidgen | tr 'A-Z' 'a-z'      # only when minting locally, not for site_uuid
 
 `site_uuid` is issued by the database, not generated locally.
 
-So a source file carries: standard citation metadata + `site_uuid` (issued) +
-`hex_code` (minted).
+So a source file carries: standard citation metadata + `source_uuid` (issued
+by the registry) + `hex_code` (minted locally).
 
 ### 8. The researcher reads extracts, not raw documents
 
@@ -373,7 +399,7 @@ lossless-monorepo/ai-labs/
 │       │   │                                   promote-fetch; read extracts not raw
 │       │   └── curation/
 │       │       ├── ~ source_file.py            adopt canonical schema;
-│       │       │                               site_uuid + hex_code fields
+│       │       │                               source_uuid + hex_code fields
 │       │       └── ~ fetch.py                  + Firecrawl tier
 │       │                                       (fetch_local_file already added)
 │       │
@@ -381,7 +407,7 @@ lossless-monorepo/ai-labs/
 │           └── inputs/
 │               ├── ~ Sources.md                local_path on gated sources
 │               ├── ~ sources/*.md              body + # Extracts +
-│               │                               site_uuid + hex_code;
+│               │                               source_uuid + hex_code;
 │               │                               content_pulled: false → true
 │               └── = sources-pdf/              analyst-staged copies
 │
@@ -413,7 +439,7 @@ status: promoted                    status: promoted
 content_pulled: false        ──►    content_pulled: true
 excerpt: "first 200 chars…"         excerpt: "first 200 chars…"
 verdict: approved                   verdict: approved
-                                    site_uuid: <sources.source_uuid>
+                                    source_uuid: <sources.source_uuid>
                                     hex_code: <6 × [a-z0-9]>
                                     normalized_url: <dedup key>
                                     client_slug: lossless
