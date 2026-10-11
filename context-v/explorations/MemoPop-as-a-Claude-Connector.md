@@ -10,7 +10,7 @@ authors:
   - Michael Staton
 augmented_with:
   - Claude Code on Claude Opus 5.5 (1M context)
-at_semantic_version: 0.0.0.11
+at_semantic_version: 0.0.0.12
 status: Open
 category: Exploration
 site_uuid: cd25a70b-8760-4014-a380-f9023bfc27f5
@@ -59,6 +59,16 @@ model calls, and how a client's drafts are kept safe and versioned. This doc
 works through all three before anything gets built.
 
 ## Decided (2026-10-10)
+
+Each decision below also has its own record in `context-v/decisions/`:
+[[The-Clients-Claude-Does-the-Work]],
+[[The-Server-Hands-Claude-the-Method-One-Step-at-a-Time]],
+[[One-Workspace-Per-Firm-With-a-Private-Bucket]],
+[[jj-Versions-Text-and-Saves-Snapshot-to-the-Bucket]],
+[[Host-the-Connector-on-Railway-at-memopop-didi-sh]],
+[[Sign-In-Through-didi-sh-OAuth]],
+[[No-Tool-Ships-Without-Its-Docs-and-Tests]], and
+[[Three-Kinds-of-Error-and-Optional-Steps-Never-Block]].
 
 - **The client's Claude does the work by default.** Claude Desktop and mobile
   run the memo method; the connector supplies the workspace, versions, and
