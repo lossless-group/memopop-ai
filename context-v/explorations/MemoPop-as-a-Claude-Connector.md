@@ -10,7 +10,7 @@ authors:
   - Michael Staton
 augmented_with:
   - Claude Code on Claude Opus 5.5 (1M context)
-at_semantic_version: 0.0.0.8
+at_semantic_version: 0.0.0.11
 status: Open
 category: Exploration
 site_uuid: cd25a70b-8760-4014-a380-f9023bfc27f5
@@ -105,6 +105,13 @@ conversation carries instructions and the one artifact a step needs, never the
 whole memo. A "start a new chat and say *continue the Acme memo*" handoff is
 the safety valve if a long run fills the conversation.
 
+0. **Start the deal and bring the materials.** A partner says *start a memo on
+   Acme*. If no deal exists, Claude creates one (company name, URL, stage,
+   which memo template) and the server sets up its folder. The partner then
+   adds what they have: the deck, the dataroom, financials, call notes, links.
+   The server keeps the originals in the client bucket and turns each into
+   text the later steps can read, which is the job today's deck and dataroom
+   agents already do. Materials can keep arriving at any point in the run.
 1. **Research, one section at a time.** Claude builds a research file for each
    outline section, shows it to the partner, and waits. The partner comments and
    adds their own research before the next section. This is the per-section
@@ -124,6 +131,100 @@ the safety valve if a long run fills the conversation.
 
 Every step is short, every artifact is saved and versioned as it lands, and
 the partner sees and shapes the research before any prose is written.
+
+### The connector's tools
+
+The step-by-step design keeps the connector small. The method lives on the
+server as steps, so Claude needs only these tools:
+
+| Tool | What it does |
+|---|---|
+| `list_deals` | The firm's deals and where each one stands |
+| `create_new_deal` | Starts a deal that has no record yet: company, URL, stage, memo template |
+| `add_materials` | Attaches a deck, dataroom, financials, notes, or links to a deal; the server keeps the original and extracts text |
+| `next_step` | Hands Claude the next instruction and the artifacts that step needs |
+| `submit_artifact` | Saves a finished research file, section draft, or enhancement |
+| `get_artifact` | Reads back any saved artifact or extracted material |
+| `save_snapshot` | The partner's "save": a backup snapshot to the client bucket |
+| `compile` | Assembles the memo and returns HTML and PDF links |
+
+**Open on `add_materials`: how the file bytes reach the server.** A file the
+partner drops into Claude lands in Claude's sandbox, not on our server, and a
+200 MB dataroom won't fit through a tool call. Three candidates, probably all
+three in the end:
+
+- **Links.** The partner pastes a DocSend, Google Drive, or Dropbox link and
+  the server fetches it. Simplest, and how a lot of deal material already moves.
+- **An upload link.** `add_materials` returns a one-time upload page under
+  `memopop.didi.sh`; the partner drops the files there in a browser. Works on
+  every Claude surface.
+- **Small files inline.** A short memo or a one-page financial summary can go
+  through the tool call as text.
+
+Extraction can run longer than Claude's 240-second tool limit, so
+`add_materials` returns at once and `list_deals` reports when the materials
+are ready.
+
+### No tool ships without its docs and tests
+
+This is our first API, so the habits it sets are the ones every later API
+inherits. A tool counts as done only when all three of these exist:
+
+1. **Agent-facing docs.** Written for Claude first, because the description
+   *is* what Claude reads when deciding what to call. Every tool's entry says:
+   when to call it and when not to; each input, with an example; what it
+   returns; what it changes on the server; how long it takes; every error it
+   can return and what to do about each; and what to call next. One source
+   feeds the MCP tool description, the OpenAPI spec, an `llms.txt` at
+   `memopop.didi.sh/llms.txt`, and a readable page at `memopop.didi.sh/docs`.
+2. **Contract tests in CI.** Each tool is called against a fixture firm and a
+   fixture deal: the normal case, bad input, a missing deal, and a request
+   from the wrong firm (which must fail). A test also checks that every tool
+   has a complete docs entry, so an undocumented tool fails the build.
+3. **A health check on the live server.** A scheduled run walks a test deal
+   through the whole flow (create, add a small deck, one research step, one
+   draft, compile) against `memopop.didi.sh`, signed in as a test firm, and
+   alerts when a step fails or slows down.
+
+Conventions to settle once, here, before the first tool:
+
+- **One error shape** for every tool: a code, a plain-language message, and
+  what the caller should do next. The code always belongs to one of the three
+  kinds below.
+- **Repeat-safe creates.** Calling `create_new_deal` twice for the same company
+  returns the existing deal rather than making a second one.
+- **Paging** on anything that lists, starting with `list_deals`.
+- **Versioning.** The API carries a version from day one, so a change to a
+  tool's inputs can't silently break a client's Claude mid-memo.
+- **A test firm** that lives in production but holds no client data, for the
+  health check to sign in as.
+
+### Three kinds of error, and almost none of them block
+
+A blocked memo is the worst outcome: the partner is mid-run, and Claude stops
+with nothing useful to say. So every error tells Claude which of three kinds it
+is, and each kind has one clear response:
+
+| Kind | Means | Claude should |
+|---|---|---|
+| **Down** | The API is unreachable, timed out, or failed on our side. Nothing was saved | Tell the partner MemoPop is unavailable, and try again later. Never retry in a tight loop |
+| **Invalid** | The request is wrong: bad input, unknown deal, wrong firm, a step submitted out of order | Fix the request using the message, or ask the partner for what is missing. Never resend it unchanged |
+| **Skipped** | One step's agent is out of service, but the memo can go on without it | Tell the partner in one line, and call `next_step`. The run continues |
+
+**Skipped is the default for anything optional.** Every enhancement
+(citations, tables, diagrams, the one-pager, scoring) is optional by
+definition, so one broken enhancement never stops a memo. The server records
+each skip on the deal; `list_deals` shows it, `compile` lists what was skipped
+in the run report, and the step can be re-run once the agent is back.
+
+**Only required steps may block**, and the list should stay short: creating
+the deal, submitting a section's research or draft, and compiling. Even then,
+a "down" error on a required step costs nothing, because nothing was saved and
+the partner can pick up where they left off.
+
+The tests cover each kind: CI checks that every tool returns the right kind for
+each failure, and that switching off any optional agent produces a skip rather
+than a block.
 
 ## What Claude can do with it (checked 2026-10-10)
 
@@ -369,14 +470,11 @@ From the same audit, before the orchestrator can be hosted:
 
 ## Open questions
 
-1. **Mode 1, mode 2, or both?** And which operations belong to which.
-2. **What can Claude's sandbox do?** Check current Claude documentation on
-   connectors, skills, and code execution before designing around it.
-3. **Tenancy boundary.** One workspace per client firm, or per deal? Per firm
-   matches `io/<firm>/` and the per-client bucket.
-4. **Where do large binaries live?** Decks and datarooms run to hundreds of MB.
-   Bucket-only and content-addressed (the corpora-builder answer) keeps them
-   out of jj.
+1. ~~Mode 1, mode 2, or both?~~ Decided: the client's Claude does the work
+   (mode 1); API keys and research APIs are v2.
+2. ~~What can Claude's sandbox do?~~ Answered in *What Claude can do with it*.
+3. ~~Tenancy boundary.~~ Decided: one workspace per firm.
+4. ~~Where do large binaries live?~~ Decided: in the client bucket, outside jj.
 5. **Migrating the eleven existing firms.** Their git history, and the three
    LFS repos, need a one-time import path into whatever replaces them.
 6. **Registry first, or connector first?** Generating REST and MCP from one
