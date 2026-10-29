@@ -28,6 +28,7 @@ date_modified: 2026-05-14
 site_uuid: 50e8e8fa-2903-41ab-a819-57d36908bbde
 hex_code: zxh70n
 publish: true
+type: Explorations
 ---
 
 # Separating Retrieval from Generation in Agent Pipelines

@@ -24,6 +24,7 @@ date_modified: 2026-05-03
 site_uuid: 31831852-1ebd-48f2-a1f1-21954e36ada5
 hex_code: hvq916
 publish: false
+type: Specs
 ---
 
 # Character Cast for Live Agent Indication

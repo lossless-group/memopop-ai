@@ -22,6 +22,7 @@ tags:
   - MemoPop-Native
   - Feature-Idea
   - Seed
+type: Specs
 ---
 
 # Reorder and Edit the Direct Outline

@@ -29,6 +29,7 @@ related_skills:
   - context-vigilance
 site_uuid: e163f332-9db2-4d93-b706-bd867928c9b9
 hex_code: 5rqxi5
+type: Plans
 ---
 
 # Constraining Memo Writing to an Approved Source Set

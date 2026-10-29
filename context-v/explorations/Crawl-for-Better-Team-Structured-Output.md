@@ -20,6 +20,7 @@ date_modified: 2026-05-07
 site_uuid: 7dc994c9-ca5e-4b30-963c-4a56cf48a5a6
 hex_code: mhl0ld
 publish: true
+type: Explorations
 ---
 
 # Crawl for Better Team Structured Output

@@ -25,6 +25,7 @@ hex_code: xfjjhj
 date_authored_initial_draft: 2026-08-06
 date_authored_current_draft: 2026-08-06
 publish: false
+type: Loops
 ---
 
 # Frontloaded Source-Approval Loop

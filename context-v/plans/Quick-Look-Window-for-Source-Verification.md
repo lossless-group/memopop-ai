@@ -23,6 +23,7 @@ tags:
   - X-Frame-Options
 site_uuid: a1072227-78ab-4a2b-b80f-cdc9de5bf238
 hex_code: 5ro051
+type: Plans
 ---
 
 # Quick-Look Window for Source Verification

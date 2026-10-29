@@ -27,6 +27,7 @@ augmented_with:
   - Claude Code on Claude Opus 5
 site_uuid: 8f4f88ce-668c-4f93-b64e-802ce4dbd153
 hex_code: riuvcd
+type: Specs
 ---
 
 # Extract Sources Where Possible, with Fallback to Ground Content

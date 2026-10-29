@@ -25,6 +25,7 @@ authors:
 site_uuid: 4ba81081-8e0f-488e-8efb-c6a9ee38ef47
 hex_code: j66mvp
 publish: true
+type: Explorations
 ---
 
 # Grill Me — A Per-Section User-Input Moment in MemoPop Runs

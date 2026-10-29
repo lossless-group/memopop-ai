@@ -37,6 +37,7 @@ tags:
   - Cloudflare-R2
   - API-Docs-For-Agents
 publish: true
+type: Explorations
 ---
 
 # MemoPop as a Claude Connector

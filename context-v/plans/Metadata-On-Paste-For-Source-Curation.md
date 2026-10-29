@@ -23,6 +23,7 @@ tags:
   - Jina
 site_uuid: 5ff2f484-2bec-4ff1-bfc9-9edf39d8055f
 hex_code: bgye30
+type: Plans
 ---
 
 # Metadata on Paste

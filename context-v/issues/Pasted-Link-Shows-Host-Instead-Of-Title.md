@@ -23,6 +23,7 @@ tags:
   - Two-Tier-Fetch
 site_uuid: 1c54d38f-19b5-4173-b1d2-01f48e2488a8
 hex_code: fl5tw4
+type: Issues
 ---
 
 # Pasted Link Shows the Host Instead of the Title

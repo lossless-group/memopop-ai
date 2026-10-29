@@ -27,6 +27,7 @@ site_uuid: 4cdeec22-a044-45e7-9d0e-5fe70fedf91c
 hex_code: dha3fd
 date_authored_current_draft: 2026-06-27
 publish: false
+type: Plans
 ---
 
 # Sources Curation UI — A Local Tool

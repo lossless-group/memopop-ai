@@ -19,6 +19,7 @@ date_modified: 2026-04-29
 site_uuid: 8a130fa5-588b-4be9-a167-a059927c59ce
 hex_code: g4ycef
 publish: false
+type: Specs
 ---
 
 # An Onboarding User Journey for memopop-native

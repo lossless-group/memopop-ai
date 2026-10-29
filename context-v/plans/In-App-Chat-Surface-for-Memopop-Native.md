@@ -31,6 +31,7 @@ site_uuid: 92d87b20-ef39-4de9-abd1-ee7b5eba595a
 hex_code: 9hpd3l
 date_authored_current_draft: 2026-06-27
 publish: false
+type: Plans
 ---
 
 # In-App Chat Surface for MemoPop Native — A Plan

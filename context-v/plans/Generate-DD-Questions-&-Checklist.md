@@ -23,6 +23,7 @@ tags:
   - Due-Diligence
   - Memo-Mode
   - Seed
+type: Plans
 ---
 
 # Generate DD Questions & Checklist

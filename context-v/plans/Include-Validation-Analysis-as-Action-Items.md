@@ -24,6 +24,7 @@ tags:
   - Citations
   - Human-Review
   - Seed
+type: Plans
 ---
 
 # Include Validation Analysis as Action Items

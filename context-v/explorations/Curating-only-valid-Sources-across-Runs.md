@@ -20,6 +20,7 @@ date_modified: 2026-08-06
 site_uuid: bc4d446b-6f49-44ba-852e-d6304d4cc23e
 hex_code: grzwxn
 publish: true
+type: Explorations
 ---
 
 # Curating Only Valid Sources Across Runs
