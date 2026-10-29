@@ -9,7 +9,8 @@ date_first_published:
 date_last_updated: 2026-08-06
 at_semantic_version: 0.0.0.3
 status: Draft
-augmented_with: Claude Code (Opus 4.7)
+augmented_with:
+  - Claude Code (Opus 4.7)
 category: Exploration
 tags: [Source-Validation, Citation-Quality, Soft-404, URL-Hallucination, Memo-Curation, MemoPop, Dedupe, Cross-Run-Merge]
 authors:

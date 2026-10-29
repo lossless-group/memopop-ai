@@ -11,7 +11,8 @@ at_semantic_version: 0.0.0.1
 status: Draft
 publish: false
 category: Plan
-augmented_with: Claude Code on Claude Opus 5 (1M context)
+augmented_with:
+  - Claude Code on Claude Opus 5 (1M context)
 authors:
   - Michael Staton
 tags:
@@ -23,6 +24,8 @@ tags:
   - X-Frame-Options
 site_uuid: a1072227-78ab-4a2b-b80f-cdc9de5bf238
 hex_code: 5ro051
+date_created: 2026-08-08
+date_modified: 2026-08-18
 type: Plans
 ---
 

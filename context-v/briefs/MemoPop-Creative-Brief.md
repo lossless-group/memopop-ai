@@ -6,7 +6,8 @@ date_created: 2026-05-05
 date_modified: 2026-05-06
 at_semantic_version: 0.1.0.0
 status: Active
-augmented_with: Claude Code (Claude Opus 4.7)
+augmented_with:
+  - Claude Code (Claude Opus 4.7)
 category: Blueprint
 publish: true
 authors:

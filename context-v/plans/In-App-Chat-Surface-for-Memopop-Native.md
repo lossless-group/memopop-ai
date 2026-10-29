@@ -9,7 +9,8 @@ date_modified: 2026-06-27
 at_semantic_version: 0.0.0.1
 status: Draft
 category: Plan
-augmented_with: Claude Code on Claude Opus 4.8 (1M context)
+augmented_with:
+  - Claude Code on Claude Opus 4.8 (1M context)
 authors:
   - Michael Staton
 tags:

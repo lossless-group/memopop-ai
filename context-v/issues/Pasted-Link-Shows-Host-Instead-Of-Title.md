@@ -11,7 +11,8 @@ at_semantic_version: 0.0.0.1
 status: Open
 publish: false
 category: Issue
-augmented_with: Claude Code on Claude Opus 5 (1M context)
+augmented_with:
+  - Claude Code on Claude Opus 5 (1M context)
 authors:
   - Michael Staton
 tags:
@@ -23,6 +24,8 @@ tags:
   - Two-Tier-Fetch
 site_uuid: 1c54d38f-19b5-4173-b1d2-01f48e2488a8
 hex_code: fl5tw4
+date_created: 2026-08-08
+date_modified: 2026-08-18
 type: Issues
 ---
 
