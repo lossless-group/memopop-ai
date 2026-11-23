@@ -1,6 +1,6 @@
 ---
 name: sources-md-curation
-description: Help the user author, edit, and codify the per-deal `inputs/Sources.md` file that drives MemoPop's codified-source research path. Use whenever the user asks to add URLs to a Sources.md, curate (reorder/prune) an existing one, fetch a URL and figure out where it belongs, promote an `outputs/<v>/Sources-aggregated.md` draft to `inputs/Sources.md`, change outlines on a deal that already has a curated source list, or generally anything involving the file at `io/<firm>/deals/<deal>/inputs/Sources.md`. Encodes the URL→section tagging heuristic, the validator's verdict ladder, the rank/sensitivity semantics, the aggregator→curate→codify lifecycle, and the common pitfalls (outline-switch breaks tags; bare-domain fetches return thin content; aggregator overwrites if codified mode isn't set).
+description: Help the user author, edit, and codify the per-deal `inputs/Sources.md` file that drives MemoPop's codified-source research path. Use whenever the user asks to add URLs to a Sources.md, curate (reorder/prune) an existing one, fetch a URL and figure out where it belongs, promote an `outputs/<v>/Sources--Aggregated.md` draft to `inputs/Sources.md`, change outlines on a deal that already has a curated source list, or generally anything involving the file at `io/<firm>/deals/<deal>/inputs/Sources.md`. Encodes the URL→section tagging heuristic, the validator's verdict ladder, the rank/sensitivity semantics, the aggregator→curate→codify lifecycle, and the common pitfalls (outline-switch breaks tags; bare-domain fetches return thin content; aggregator overwrites if codified mode isn't set).
 ---
 
 # Authoring and Codifying MemoPop Sources.md
@@ -10,8 +10,8 @@ description: Help the user author, edit, and codify the per-deal `inputs/Sources
 ## When this skill activates
 
 - The user pastes a URL and says "add this to Sources.md" or "add this one".
-- The user is about to start, mid-, or finishing a curation pass on `Sources-aggregated.md`.
-- The user wants to promote a `Sources-aggregated.md` draft into a working `inputs/Sources.md`.
+- The user is about to start, mid-, or finishing a curation pass on `Sources--Aggregated.md`.
+- The user wants to promote a `Sources--Aggregated.md` draft into a working `inputs/Sources.md`.
 - The user asks to change the outline on a deal that already has a curated Sources.md (high-risk operation — see *Outline-switch caveat*).
 - The user is confused about why a URL isn't appearing in a section's research.
 - The user wants to understand why a source was dropped, gated, or recovered.
@@ -28,7 +28,7 @@ When supporting the user on Sources.md, the agent's job is to:
 
 4. **Surface the verdict ladder when discussing drops.** When a user asks "why was X dropped?", the answer is one of: hard 404, soft-404 body sniff, paywall stub (publisher not on allow-list), hallucination-pattern regex match, fetch failure. The agent should know these by name and which file implements them (`src/agents/remove_invalid_sources.py`).
 
-5. **Don't auto-promote without explicit instruction.** Moving `outputs/<v>/Sources-aggregated.md` → `inputs/Sources.md` and flipping `mode: aggregated` → `mode: codified` are deliberate decisions. Confirm before doing them, OR clearly announce when promoting as-is.
+5. **Don't auto-promote without explicit instruction.** Moving `outputs/<v>/Sources--Aggregated.md` → `inputs/Sources.md` and flipping `mode: aggregated` → `mode: codified` are deliberate decisions. Confirm before doing them, OR clearly announce when promoting as-is.
 
 ## File anatomy
 
@@ -41,12 +41,12 @@ io/<firm>/deals/<deal>/
 │   └── <other-inputs>.md
 └── outputs/
     └── ChromaDB-v0.0.N/
-        └── Sources-aggregated.md ← pipeline output per run; analyst's worksheet
+        └── Sources--Aggregated.md ← pipeline output per run; analyst's worksheet
 ```
 
 **`inputs/Sources.md`** is the canonical, lives-across-runs file. It survives version increments.
 
-**`outputs/<v>/Sources-aggregated.md`** is the pipeline's per-run draft. Each broad-search run overwrites the one in its own version dir. The aggregator's first job per run.
+**`outputs/<v>/Sources--Aggregated.md`** is the pipeline's per-run draft (runs before 2026-11-22 named it `Sources-aggregated.md`; same file, same shape). Each broad-search run overwrites the one in its own version dir. The aggregator's first job per run.
 
 ## Frontmatter schema
 
@@ -85,11 +85,11 @@ Only `url` is required per source. Everything else is best-effort; the codified 
 
 | Mode | What it means | When set | Pipeline behavior |
 |---|---|---|---|
-| absent (no Sources.md) | First-ever run for this deal | First broad-search run | Broad search runs; aggregator writes a draft to `outputs/<v>/Sources-aggregated.md` with `mode: aggregated` and halts |
+| absent (no Sources.md) | First-ever run for this deal | First broad-search run | Broad search runs; aggregator writes a draft to `outputs/<v>/Sources--Aggregated.md` with `mode: aggregated` and halts |
 | `aggregated` | Pipeline's draft, awaiting curation | Aggregator sets this when writing the file | Codified short-circuit does NOT fire; if re-run, broad search runs again and aggregator halts again |
 | `codified` | Analyst-approved; use ONLY these URLs | Analyst flips after curating | Codified short-circuit fires at `section_research`; aggregator passes through without halting; writer composes from these URLs only |
 
-**Critical:** the codified short-circuit is in `src/agents/perplexity_section_researcher.py` (top of `perplexity_section_researcher_agent`). It checks `is_codified()` on the loaded `inputs/Sources.md`. If the file has `mode: aggregated` (or is at `outputs/<v>/Sources-aggregated.md` rather than `inputs/Sources.md`), the short-circuit does not fire.
+**Critical:** the codified short-circuit is in `src/agents/perplexity_section_researcher.py` (top of `perplexity_section_researcher_agent`). It checks `is_codified()` on the loaded `inputs/Sources.md`. If the file has `mode: aggregated` (or is at `outputs/<v>/Sources--Aggregated.md` rather than `inputs/Sources.md`), the short-circuit does not fire.
 
 ## Section tagging — the heart of this skill
 
@@ -185,13 +185,13 @@ Redacted hallucinations log: dropped citations (post-recovery) get a card in `ou
 - **Pruning:** delete entries the analyst x-es out. Don't comment them out — the YAML parser will keep them as data. Either delete or add a meaningful note in the `excluded` body section.
 - **Sort within rank:** by topical relevance to the section, not by URL or alphabetically. Primary publisher voices first, then trade press, then aggregators.
 
-### Promoting `outputs/<v>/Sources-aggregated.md` → `inputs/Sources.md`
+### Promoting `outputs/<v>/Sources--Aggregated.md` → `inputs/Sources.md`
 
 This is a three-step deliberate operation:
 
 ```bash
 # 1. Copy (don't move — the outputs/<v>/ artifact stays as the run's record)
-cp io/<firm>/deals/<deal>/outputs/<deal>-v<X>/Sources-aggregated.md \
+cp io/<firm>/deals/<deal>/outputs/<deal>-v<X>/Sources--Aggregated.md \
    io/<firm>/deals/<deal>/inputs/Sources.md
 
 # 2. Flip mode in the new inputs/ copy
@@ -215,7 +215,7 @@ When the user asks to switch outlines on a curated deal:
 
 1. **Flag the consequence.** Tagged sources won't match the new outline's section names. Most sources will become `<needs-source>` stubs on the next run.
 2. **Offer three options** before doing the switch:
-   - **A.** Re-run aggregation under the new outline. Costs another broad-search run (~$5–10 in Perplexity calls) but produces a fresh Sources-aggregated.md with correctly-tagged sections. Cleanest.
+   - **A.** Re-run aggregation under the new outline. Costs another broad-search run (~$5–10 in Perplexity calls) but produces a fresh Sources--Aggregated.md with correctly-tagged sections. Cleanest.
    - **B.** Bulk re-tag the existing file using a best-guess mapping (old → new section name). Free; preserves the URL set and analyst-added entries. Heuristic; the analyst should spot-check.
    - **C.** Re-tag during the next curation pass manually. Free; most analyst-correct; more work for the human.
 3. **Recommend B** unless the user has time for A, or knows the file is mostly junk anyway and A would be cleaner.
@@ -224,7 +224,7 @@ If the user reverses course mid-decision (as has happened — "switch back, sorr
 
 ## Common pitfalls
 
-1. **Forgetting to flip `mode: aggregated` → `mode: codified`** when promoting from `outputs/<v>/Sources-aggregated.md` to `inputs/Sources.md`. The codified researcher checks `mode == "codified"` exactly. Without the flip, the pipeline re-does broad search and overwrites the aggregated file in the new version's output dir.
+1. **Forgetting to flip `mode: aggregated` → `mode: codified`** when promoting from `outputs/<v>/Sources--Aggregated.md` to `inputs/Sources.md`. The codified researcher checks `mode == "codified"` exactly. Without the flip, the pipeline re-does broad search and overwrites the aggregated file in the new version's output dir.
 
 2. **Two `mode:` occurrences in the file.** The aggregator's frontmatter includes a comment block that mentions "change `mode: aggregated` to `mode: codified`" as instructions. A naive string replace might hit the comment string before the YAML key. Always use a line-anchored regex (`^mode: aggregated$` with `MULTILINE`) or target the YAML key with awareness that comments contain the same string.
 
@@ -248,7 +248,7 @@ The skill assumes the user is working inside `ai-labs/memopop-ai/apps/memopop-or
 | `src/curation/fetch.py` | URL → markdown via Jina (with httpx + BeautifulSoup fallback) |
 | `src/agents/codified_section_researcher.py` | The agent that consumes Sources.md and writes per-section research |
 | `src/agents/perplexity_section_researcher.py` | Has the codified short-circuit at top of its agent function |
-| `src/agents/source_aggregator.py` | Aggregator that writes Sources-aggregated.md and halts |
+| `src/agents/source_aggregator.py` | Aggregator that writes Sources--Aggregated.md and halts |
 | `src/agents/remove_invalid_sources.py` | The URL-keyed validator + verdict ladder + recovery + redaction worksheet |
 | `src/validation/gated_publishers.yaml` | 31-publisher allow-list — paywalled-but-reputable |
 | `templates/Sources-template.md` | Annotated template if the analyst wants to hand-author from scratch |

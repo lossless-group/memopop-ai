@@ -1,7 +1,7 @@
 ---
 title: "Sources Curation UI — A Local Tool for Converging a Sources.md"
 lede: >-
-  A single-file local tool bound to one `Sources-aggregated.md`: edit, preview via Jina, re-search via SearXNG, save `inputs/Sources.md`.
+  A single-file local tool bound to one `Sources--Aggregated.md`: edit, preview via Jina, re-search via SearXNG, save `inputs/Sources.md`.
 date_authored_initial_draft: 2026-06-27
 date_last_updated: 2026-08-06
 date_created: 2026-06-27

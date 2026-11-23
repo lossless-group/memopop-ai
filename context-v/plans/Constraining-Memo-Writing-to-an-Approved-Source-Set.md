@@ -144,7 +144,7 @@ Graduates `tools/curate_sources.py` from a standalone localhost tool into the de
 
 ### The loop
 
-The aggregator already stops the pipeline and writes `Sources-aggregated.md`. Today the analyst is told to go edit YAML in a terminal. Instead:
+The aggregator already stops the pipeline and writes `Sources--Aggregated.md`. Today the analyst is told to go edit YAML in a terminal. Instead:
 
 ```
 run halts at aggregate_sources

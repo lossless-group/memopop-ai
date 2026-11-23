@@ -105,7 +105,7 @@ Cost: one writer pass ($3–5) + enrichments + validators. No researcher work, n
 - **Does not re-run the codified researcher.** The whole point is that the research narrative is already drafted; we're enhancing it directly, not regenerating it.
 - **Does not bump the version.** Same version directory throughout. The resume re-creates 2-sections/ and everything after.
 - **Does not invoke a separate insertion agent or prompt template.** Claude does the writing directly using its judgment, in conversation. No templated rules, no word-count delta checks, no temperature ceremony.
-- **Does not run a fresh broad search.** That's a different workflow (start from scratch, let aggregator halt, edit Sources-aggregated.md, codify).
+- **Does not run a fresh broad search.** That's a different workflow (start from scratch, let aggregator halt, edit Sources--Aggregated.md, codify).
 
 ## Common failure modes
 
