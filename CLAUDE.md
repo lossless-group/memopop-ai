@@ -4,7 +4,7 @@
 
 `memopop-ai` is a Bun-workspaces monorepo containing the **client surface** of MemoPop: the Tauri 2 desktop app, the Astro marketing site, a placeholder SvelteKit web app, and shared style packages. The agent engine that actually generates memos — `memopop-orchestrator` — lives here as a git submodule under `apps/`, but it has its own GitHub repo, its own venv, its own dependency graph, and its own release cadence. The two halves are versioned independently and talk over `localhost:8765` via a FastAPI sidecar the Tauri app spawns.
 
-This repo is a child of `ai-labs/` (see `../CLAUDE.md`) and a grandchild of `lossless-monorepo/` (see `../../CLAUDE.md`). Load the parent CLAUDE.md files when working anywhere under this tree — they cover the pseudomonorepo discipline, the `context-v/` convention, the ChromaDB-backed RAG, and the HARD STOP rules around repo relocation that apply here too.
+This repo is a child of `ai-labs/` (see `../CLAUDE.md`) and a grandchild of `lossless-monorepo/` (see `../../CLAUDE.md`). Load the parent CLAUDE.md files when working anywhere under this tree — they cover the pseudomonorepo discipline, the `context-v/` convention, the ChromaDB-backed RAG.
 
 ## Repo layout
 
@@ -138,7 +138,7 @@ The orchestrator's CLAUDE.md captures the pipeline-side direction (retrieval/gen
 - `apps/memopop-native/README.md` — desktop app specifics
 - `apps/memopop-site/README.md` — Astro site specifics
 - `../CLAUDE.md` — `ai-labs/` parent guidance (uv discipline, MCP scope, branch tier model)
-- `../../CLAUDE.md` — `lossless-monorepo/` root (HARD STOP relocation rules, pseudomonorepo discipline)
+- `../../CLAUDE.md` — `lossless-monorepo/` root (pseudomonorepo discipline)
 - The `context-vigilance`, `pseudomonorepos`, `changelog-conventions`, and `astro-knots` skills auto-load when relevant
 
 <!-- lossless:browser-drive:start -->
