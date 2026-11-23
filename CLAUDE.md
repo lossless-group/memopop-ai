@@ -137,7 +137,7 @@ The orchestrator's CLAUDE.md captures the pipeline-side direction (retrieval/gen
 - `apps/memopop-native/changelog/` — Tauri shell foundation entries (`2026-04-27_01` through `_03`)
 - `apps/memopop-native/README.md` — desktop app specifics
 - `apps/memopop-site/README.md` — Astro site specifics
-- `../CLAUDE.md` — `ai-labs/` parent guidance (uv discipline, MCP scope, branch tier model)
+- `../CLAUDE.md` — `ai-labs/` parent guidance (uv discipline, MCP scope, branches and shipping)
 - `../../CLAUDE.md` — `lossless-monorepo/` root (pseudomonorepo discipline)
 - The `context-vigilance`, `pseudomonorepos`, `changelog-conventions`, and `astro-knots` skills auto-load when relevant
 
