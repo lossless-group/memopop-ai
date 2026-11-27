@@ -196,6 +196,7 @@ cargo check --manifest-path apps/memopop-native/src-tauri/Cargo.toml
 MemoPop is open source. If you'd rather not run a Python library and the command line, several commercial vendors operate in this space — including:
 
 - [DataroomHQ](https://www.dataroomhq.ai/) — AI-powered virtual data room for fundraising that generates investor-grade materials (data decks, financial analysis, investment memos) and tracks investor engagement.
+- [Hatcher+ FAAST](https://hq.hatcher.com/?homepage=faast) — "Funds As A Service Technology" platform for fund and SPV managers: AI deal scoring, investor onboarding with KYC/KYB, portfolio management, and automated reporting.
 
 The orchestrator README keeps a fuller, categorized list of comparable platforms: see [Similar Services](apps/memopop-orchestrator/README.md#similar-services).
 
